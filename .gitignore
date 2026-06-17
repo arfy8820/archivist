@@ -1,0 +1,7 @@
+bin/
+obj/
+.appdata/
+.localappdata/
+.dotnet-home/
+.nuget-packages/
+.smoke-*/

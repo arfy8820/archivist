@@ -1,0 +1,183 @@
+Nice one! Ok. I have some more notes, and changes to make.
+
+First. For podcasts, let's just let podcast DL handle creating the directory for each podcast. From a python sketch of the idea, I had the following.
+
+```python
+base_dir = Path('e:/music/podcasts').expanduser().resolve()
+dir_template = str(base_dir / "{{podcast_title}}")
+out_template = "{{release_year}}-{{release_month}}-{{release_day}} - {{title}}"
+archive_template = str(base_dir / "{{podcast_title}}" / "archive.json")
+threads = 3
+
+def podcast_dl(args: list[str]):
+    """Use deno to run podcast-dl direct from npm with the given list of args."""
+    code = subprocess.run(["dx", "podcast-dl", *args]).returncode
+    print(f"podcast-dl exited with code {code}.")
+    return code
+    
+def download(name: str, url: str):
+    print(f"Downloading podcast {name}")
+    args = ["--out-dir", dir_template, "--url", url, "--threads", str(threads), "--episode-template", out_template, "--archive", archive_template, '--include-meta', '--include-episode-meta']
+    return podcast_dl(args)
+
+def run_with_cmdline(url: str, args: list[str]):
+    return podcast_dl(['--url', url ] + args)
+
+```
+Perhaps those could be default templates if none is given in the config.
+Also, for probing for a label, the first line of output from the --info option gives the title of the podcast. That would make a good user label once sluggified/sanitised.
+podcast-dl --info --url <podcast-url>
+
+Next. This is the latest config file format I came up with while working on a python version of this tool, now being backported to F#. Have the tool accept this new format, and adjust the types and config parsing as appropriate.
+
+```json
+{
+  "base_dir": "E:/videos",
+  "podcast_dir": "e:/music/podcasts",
+  "default_output_template": "%(playlist)s/%(upload_date>%Y-%m-%d)s - %(title)s.%(ext)s",
+  "default_podcast_template": "%(upload_date>%Y-%m-%d)s - %(title)s.%(ext)s",
+  "targets": [
+    {
+      "name": "6ixandout",
+      "url": "https://www.youtube.com/channel/UCevAMToIcpXXvk58rBArikA",
+      "mode": "auto",
+      "subdir": "6ixandout"
+    },
+    {
+      "name": "audiopanicroom",
+      "url": "http://feeds.feedburner.com/AudioPanicRoom",
+      "mode": "podcast",
+      "subdir": "audiopanicroom"
+    },
+    {
+      "name": "blaze",
+      "url": "https://www.youtube.com/channel/UCYY5GWf7MHFJ6DZeHreoXgw",
+      "mode": "auto",
+      "subdir": "blaze"
+    },
+    {
+      "name": "bosman",
+      "url": "https://www.youtube.com/channel/UCJCYqkT8zmkrjmPvRPWSb5w",
+      "mode": "auto",
+      "subdir": "bosman"
+    },
+    {
+      "name": "cautionarytales",
+      "url": "https://pushkin.supportingcast.fm/content/eyJ0IjoicCIsImMiOiIxNTAzIiwidSI6IjI1MjMzMjciLCJkIjoiMTYzNjM0MDk5MyIsImsiOjIzMH18OTRiZGY5YTNkZmQwNjgwODI1MDY2ODk2NmQwNjAyODBlNmU3YzQ0NmRjZDk5MzdkODkwYjg4OTUzOWM2YTJhMg.rss",
+      "mode": "auto",
+      "subdir": "cautionarytales"
+    },
+    {
+      "name": "darknet-diaries",
+      "url": "https://feeds.megaphone.fm/darknetdiaries",
+      "mode": "auto",
+      "subdir": "darknet-diaries"
+    },
+    {
+      "name": "doorbell",
+      "url": "https://www.youtube.com/channel/UC8bzrhr0AXUsGb2BS8r6Utw/playlists",
+      "mode": "auto",
+      "subdir": "doorbell",
+      "output_template": "%(uploader)s/%(playlist)s/%(playlist_index)s-%(title)s.%(ext)s"
+    },
+    {
+      "name": "elmercat",
+      "url": "https://soundcloud.com/elmercat",
+      "mode": "auto",
+      "subdir": "elmercat"
+    },
+    {
+      "name": "mjg0117",
+      "url": "https://www.youtube.com/channel/UC7JTlTTTr-aPkl1xFj1K0bQ",
+      "mode": "auto",
+      "subdir": "mjg0117"
+    },
+    {
+      "name": "new-rustacean",
+      "url": "https://newrustacean.com/feed.xml",
+      "mode": "auto",
+      "subdir": "new-rustacean"
+    },
+    {
+      "name": "onj",
+      "url": "https://www.youtube.com/channel/UCqtMRZeGSGWMAy0AX31K0MQ",
+      "mode": "auto",
+      "subdir": "onj"
+    },
+    {
+      "name": "revolutions",
+      "url": "http://revolutionspodcast.libsyn.com/rss/",
+      "mode": "podcast",
+      "subdir": "revolutions"
+    },
+    {
+      "name": "rosie",
+      "url": "https://www.youtube.com/channel/UCpF50xS1DHyjtBQ2qnOMcRg",
+      "mode": "auto",
+      "subdir": "rosie"
+    },
+    {
+      "name": "sarcastic",
+      "url": "https://www.youtube.com/channel/UCodbH5mUeF-m_BsNueRDjcw",
+      "mode": "auto",
+      "subdir": "sarcastic"
+    },
+    {
+      "name": "schmoyoho",
+      "url": "https://www.youtube.com/channel/UCNYrK4tc5i1-eL8TXesH2pg",
+      "mode": "auto",
+      "subdir": "schmoyoho"
+    },
+    {
+      "name": "the-gilded-shadows",
+      "url": "https://www.youtube.com/channel/UC-4jEQ_P3zxF88uN6qfQvsQ",
+      "mode": "auto",
+      "subdir": "the-gilded-shadows"
+    },
+    {
+      "name": "veritasium",
+      "url": "https://www.youtube.com/@veritasium",
+      "mode": "auto",
+      "subdir": "veritasium"
+    },
+    {
+      "name": "visual-venture",
+      "url": "https://youtube.com/@VisualVenture",
+      "mode": "auto",
+      "subdir": "visual-venture"
+    }
+  ],
+  "yt_dlp": {
+    "ignoreerrors": "only_download",
+    "retries": 10,
+    "fragment_retries": 10,
+    "cookiesfrombrowser": [
+      "firefox",
+      null,
+      null,
+      null
+    ],
+    "extract_flat": "discard_in_playlist",
+    "postprocessors": [
+      {
+        "key": "FFmpegExtractAudio",
+        "preferredcodec": "best",
+        "preferredquality": "5",
+        "nopostoverwrites": false
+      },
+      {
+        "key": "FFmpegMetadata",
+        "add_chapters": true,
+        "add_metadata": true,
+        "add_infojson": "if_exists"
+      },
+      {
+        "key": "FFmpegConcat",
+        "only_multi_video": true,
+        "when": "playlist"
+      }
+    ],
+    "warn_when_outdated": true
+  }
+}
+```

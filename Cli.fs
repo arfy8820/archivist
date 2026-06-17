@@ -1,6 +1,6 @@
-module YtArchive.Cli
+module Archivist.Cli
 
-open YtArchive.Domain
+open Archivist.Domain
 
 let private tryGetOption (name: string) (args: string list) =
     let rec loop remaining =
@@ -37,31 +37,44 @@ let private validateKnownOptions (knownOptions: string list) (args: string list)
     loop args
 
 let private parseAdd (args: string list) : Command =
-    match validateKnownOptions [ "--url"; "--label"; "--output" ] args with
+    match validateKnownOptions [ "--url"; "--label"; "--output"; "--type" ] args with
     | Error message -> Usage(Some message)
     | Ok () ->
-        match tryGetOption "--url" args, tryGetOption "--label" args, tryGetOption "--output" args with
-        | Error message, _, _
-        | _, Error message, _
-        | _, _, Error message ->
+        match tryGetOption "--url" args, tryGetOption "--label" args, tryGetOption "--output" args, tryGetOption "--type" args with
+        | Error message, _, _, _
+        | _, Error message, _, _
+        | _, _, Error message, _
+        | _, _, _, Error message ->
             Usage(Some message)
-        | Ok url, Ok label, Ok outputTemplate ->
-            Add
-                { url = url
-                  label = label
-                  outputTemplate = outputTemplate }
+        | Ok url, Ok label, Ok outputTemplate, Ok sourceType ->
+            match sourceType with
+            | Some value when value.Trim().ToLowerInvariant() = "auto" ->
+                Add
+                    { url = url
+                      label = label
+                      outputTemplate = outputTemplate
+                      sourceType = None }
+            | _ ->
+                match sourceType |> Option.map tryParseSourceType with
+                | Some None -> Usage(Some "Unknown target type. Use 'auto', 'youtube', or 'podcast'.")
+                | parsedSourceType ->
+                    Add
+                        { url = url
+                          label = label
+                          outputTemplate = outputTemplate
+                          sourceType = parsedSourceType |> Option.flatten }
 
 let private parseRemove (args: string list) : Command =
     match args with
     | [] ->
-        Usage(Some "Usage: yt-archive remove <label> [--remove-archive]")
+        Usage(Some "Usage: archivist remove <label> [--remove-archive]")
     | label :: rest ->
         let removeArchive = rest |> List.contains "--remove-archive"
         let unknown = rest |> List.filter (fun arg -> arg <> "--remove-archive")
 
         match unknown with
         | [] -> Remove(label, removeArchive)
-        | _ -> Usage(Some "Usage: yt-archive remove <label> [--remove-archive]")
+        | _ -> Usage(Some "Usage: archivist remove <label> [--remove-archive]")
 
 let private parseList (args: string list) : Command =
     match args with
@@ -72,13 +85,13 @@ let private parseSync (args: string list) : Command =
     match args with
     | [] -> Sync All
     | [ label ] -> Sync(One label)
-    | _ -> Usage(Some "Usage: yt-archive sync [label]")
+    | _ -> Usage(Some "Usage: archivist sync [label]")
 
 let private parseConfig (args: string list) : Command =
     match args with
     | [] -> Config None
     | [ baseDir ] -> Config(Some baseDir)
-    | _ -> Usage(Some "Usage: yt-archive config [baseDir]")
+    | _ -> Usage(Some "Usage: archivist config [baseDir]")
 
 let private parseCommand (commandName: string) (args: string list) : Command =
     match commandName with
@@ -107,12 +120,12 @@ let printUsage (error: string option) =
     | Some message -> eprintfn "Error: %s" message
     | None -> ()
 
-    printfn "yt-archive - manage named yt-dlp archive targets"
+    printfn "archivist - manage named media archive targets"
     printfn ""
     printfn "Usage:"
-    printfn "  yt-archive [--verbose] add"
-    printfn "  yt-archive [--verbose] add --url <url> [--label <label>] [--output <output-template>]"
-    printfn "  yt-archive [--verbose] remove <label> [--remove-archive]"
-    printfn "  yt-archive [--verbose] list"
-    printfn "  yt-archive [--verbose] sync [label]"
-    printfn "  yt-archive [--verbose] config [<baseDir>]"
+    printfn "  archivist [--verbose] add"
+    printfn "  archivist [--verbose] add --url <url> [--label <label>] [--type auto|youtube|podcast] [--output <output>]"
+    printfn "  archivist [--verbose] remove <label> [--remove-archive]"
+    printfn "  archivist [--verbose] list"
+    printfn "  archivist [--verbose] sync [label]"
+    printfn "  archivist [--verbose] config [<baseDir>]"

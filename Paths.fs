@@ -1,13 +1,19 @@
-module YtArchive.Paths
+module Archivist.Paths
 
 open System
 open System.IO
-open YtArchive.Domain
+open Archivist.Domain
 
 let private nonEmptyOr fallback (value: string) =
     if String.IsNullOrWhiteSpace value then fallback else value
 
-let appName = "yt-archive"
+let appName = "archivist"
+
+let private envVar (name: string) =
+    Environment.GetEnvironmentVariable(name)
+    |> fun value ->
+        if String.IsNullOrWhiteSpace value then None
+        else Some value
 
 let userHomeDirectory () =
     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
@@ -16,10 +22,16 @@ let userHomeDirectory () =
 let defaultBaseDir () =
     Path.Combine(userHomeDirectory (), "Videos", "YouTube")
 
+let defaultPodcastDir () =
+    Path.Combine(userHomeDirectory (), "Music", "Podcasts")
+
 let configDirectory () =
-    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)
-    |> nonEmptyOr (Path.Combine(userHomeDirectory (), ".config"))
-    |> fun root -> Path.Combine(root, appName)
+    match envVar "ARCHIVIST_CONFIG_DIR" with
+    | Some directory -> directory
+    | None ->
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)
+        |> nonEmptyOr (Path.Combine(userHomeDirectory (), ".config"))
+        |> fun root -> Path.Combine(root, appName)
 
 let configFile () =
     Path.Combine(configDirectory (), "config.json")
@@ -32,3 +44,6 @@ let archiveDirectory (config: Config) =
 
 let archiveFile (config: Config) (label: string) =
     Path.Combine(archiveDirectory config, $"{label}.txt")
+
+let podcastArchiveTemplate (config: Config) =
+    Path.Combine(config.podcastDir, "{{podcast_title}}", "archive.json")

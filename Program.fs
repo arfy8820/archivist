@@ -1,14 +1,15 @@
-module YtArchive.Program
+module Archivist.Program
 
 open System
 open System.IO
 open System.Text.RegularExpressions
 open System.Threading.Tasks
-open YtArchive.Domain
-open YtArchive.Paths
-open YtArchive.ConfigStore
-open YtArchive.YtDlp
-open YtArchive.Cli
+open Archivist.Domain
+open Archivist.Paths
+open Archivist.ConfigStore
+open Archivist.YtDlp
+open Archivist.PodcastDl
+open Archivist.Cli
 
 let private stringOptionOfNullable (value: string | null) =
     if isNull value then None else Some value
@@ -124,6 +125,27 @@ let private resolveOutputTemplate (request: AddRequest) =
     | Some template when not (String.IsNullOrWhiteSpace template) -> Some(template.Trim())
     | _ -> promptOptional "Output template (optional): "
 
+let private resolveSourceType (request: AddRequest) =
+    match request.sourceType with
+    | Some sourceType -> sourceType
+    | None -> YouTube
+
+let private resolveMode (request: AddRequest) =
+    request.sourceType
+    |> Option.map sourceTypeName
+    |> Option.defaultValue "auto"
+
+let private sourceTypeForAdd (url: string) (request: AddRequest) =
+    match request.sourceType with
+    | Some sourceType -> sourceType
+    | None ->
+        { name = ""
+          url = url
+          mode = "auto"
+          subdir = None
+          outputTemplate = None }
+        |> targetSourceType
+
 let private chooseLabelFromProbe (probe: ProbeInfo) =
     match stableSuggestedLabel probe with
     | Some stable ->
@@ -140,34 +162,62 @@ let private chooseLabelFromProbe (probe: ProbeInfo) =
         | None ->
             promptRequired "Label: " |> sanitizeLabel
 
-let private resolveLabel (logger: Logger) (url: string) (request: AddRequest) : Task<Result<string, string>> =
+let private chooseLabelFromSuggestion (suggestion: string) =
+    let sanitized = sanitizeLabel suggestion
+    let entered = prompt $"Label [{sanitized}]: "
+
+    match stringOptionOfNullable entered with
+    | None -> sanitized
+    | Some text when String.IsNullOrWhiteSpace text -> sanitized
+    | Some text -> sanitizeLabel text
+
+let private resolveLabel (logger: Logger) (url: string) (sourceType: SourceType) (request: AddRequest) : Task<Result<string, string>> =
     task {
         match request.label with
         | Some label when not (String.IsNullOrWhiteSpace label) ->
             return Ok(sanitizeLabel label)
         | _ ->
-            let args = probeArgs url
-            printfn "No label supplied. Probing yt-dlp for metadata..."
-            logInfo logger $"Running: {formatCommand executableName args}"
-            let! probeResult = probe url
+            match sourceType with
+            | Podcast ->
+                let args = PodcastDl.infoArgs url
+                printfn "No label supplied. Probing podcast-dl for feed info..."
+                logInfo logger $"Running: {formatCommand PodcastDl.executableName args}"
+                let! probeResult = PodcastDl.probeLabel url
 
-            match probeResult with
-            | ProbeSuccess info ->
-                let label = chooseLabelFromProbe info
-                return Ok label
-            | ProbeFailed error ->
-                eprintfn "Could not probe label automatically."
-                if not (String.IsNullOrWhiteSpace error) then
-                    eprintfn "%s" error
-                let label = promptRequired "Label: " |> sanitizeLabel
-                return Ok label
+                match probeResult with
+                | Ok title ->
+                    let label = chooseLabelFromSuggestion title
+                    return Ok label
+                | Error error ->
+                    eprintfn "Could not probe podcast label automatically."
+                    if not (String.IsNullOrWhiteSpace error) then
+                        eprintfn "%s" error
+                    let label = promptRequired "Label: " |> sanitizeLabel
+                    return Ok label
+            | YouTube ->
+                let args = YtDlp.probeArgs url
+                printfn "No label supplied. Probing yt-dlp for metadata..."
+                logInfo logger $"Running: {formatCommand YtDlp.executableName args}"
+                let! probeResult = YtDlp.probe url
+
+                match probeResult with
+                | ProbeSuccess info ->
+                    let label = chooseLabelFromProbe info
+                    return Ok label
+                | ProbeFailed error ->
+                    eprintfn "Could not probe label automatically."
+                    if not (String.IsNullOrWhiteSpace error) then
+                        eprintfn "%s" error
+                    let label = promptRequired "Label: " |> sanitizeLabel
+                    return Ok label
     }
 
 let private resolveAddRequest (logger: Logger) (request: AddRequest) : Task<Result<ResolvedAdd, string>> =
     task {
         let url = resolveUrl request
         let outputTemplate = resolveOutputTemplate request
-        let! labelResult = resolveLabel logger url request
+        let sourceType = sourceTypeForAdd url request
+        let! labelResult = resolveLabel logger url sourceType request
 
         match labelResult with
         | Error error ->
@@ -178,15 +228,23 @@ let private resolveAddRequest (logger: Logger) (request: AddRequest) : Task<Resu
             return
                 Ok
                     { label = label
-                      entry =
-                        { url = url
+                      target =
+                        { name = label
+                          url = url
+                          mode = resolveMode request
+                          subdir = Some label
                           outputTemplate = outputTemplate } }
     }
 
-let private printEntry (label: string) (entry: ArchiveEntry) =
-    printfn "%s" label
-    printfn "  URL: %s" entry.url
-    match entry.outputTemplate with
+let private printTarget (target: Target) =
+    printfn "%s" target.name
+    printfn "  Type: %s" (target |> targetSourceType |> sourceTypeName)
+    printfn "  Mode: %s" target.mode
+    printfn "  URL: %s" target.url
+    match target.subdir with
+    | Some subdir -> printfn "  Subdir: %s" subdir
+    | None -> ()
+    match target.outputTemplate with
     | Some template -> printfn "  Output: %s" template
     | None -> printfn "  Output: default"
 
@@ -221,7 +279,10 @@ let private handleAdd (logger: Logger) (config: Config) (request: AddRequest) : 
         | Ok add ->
             let updated =
                 { config with
-                    entries = config.entries |> Map.add add.label add.entry }
+                    targets =
+                        config.targets
+                        |> List.filter (fun target -> target.name <> add.label)
+                        |> fun targets -> targets @ [ add.target ] }
 
             match save updated with
             | Error error ->
@@ -233,11 +294,12 @@ let private handleAdd (logger: Logger) (config: Config) (request: AddRequest) : 
     }
 
 let private handleRemove (config: Config) (label: string) (removeArchive: bool) : int =
-    let exists = config.entries |> Map.containsKey label
+    let existingTarget = config.targets |> List.tryFind (fun target -> target.name = label)
+    let exists = existingTarget |> Option.isSome
 
     let updated =
         { config with
-            entries = config.entries |> Map.remove label }
+            targets = config.targets |> List.filter (fun target -> target.name <> label) }
 
     let configResult = save updated
 
@@ -252,7 +314,13 @@ let private handleRemove (config: Config) (label: string) (removeArchive: bool) 
             printfn "No mapping found for '%s'. Config unchanged." label
 
         if removeArchive then
-            let path = archiveFile config label
+            let path =
+                existingTarget
+                |> Option.map targetSourceType
+                |> Option.defaultValue YouTube
+                |> function
+                    | YouTube -> archiveFile config label
+                    | Podcast -> podcastArchiveTemplate config
             try
                 if File.Exists path then
                     File.Delete path
@@ -268,10 +336,10 @@ let private handleRemove (config: Config) (label: string) (removeArchive: bool) 
             0
 
 let private handleList (config: Config) : int =
-    if Map.isEmpty config.entries then
+    if List.isEmpty config.targets then
         printfn "No archive mappings configured."
     else
-        config.entries |> Map.iter printEntry
+        config.targets |> List.iter printTarget
     0
 
 let private handleConfig (config: Config) (newBaseDir: string option) : int =
@@ -298,11 +366,11 @@ let private handleConfig (config: Config) (newBaseDir: string option) : int =
 let private getSyncEntries (config: Config) (target: SyncTarget) =
     match target with
     | One label ->
-        match config.entries |> Map.tryFind label with
-        | Some entry -> Ok [ label, entry ]
+        match config.targets |> List.tryFind (fun target -> target.name = label) with
+        | Some target -> Ok [ target ]
         | None -> Error $"No entry found for label '{label}'."
     | All ->
-        Ok(config.entries |> Map.toList)
+        Ok config.targets
 
 let private printSyncResult (label: string) (result: ProcessResult) =
     if result.exitCode = 0 then
@@ -335,12 +403,20 @@ let private handleSync (logger: Logger) (config: Config) (target: SyncTarget) : 
                 | Ok entries ->
                     let mutable finalExitCode = 0
 
-                    for (label, entry) in entries do
-                        let args = buildSyncArgs config label entry
+                    for target in entries do
+                        let label = target.name
+                        let sourceType = targetSourceType target
+                        let executableName, args, sync =
+                            match sourceType with
+                            | YouTube ->
+                                YtDlp.executableName, YtDlp.buildSyncArgs config label target, YtDlp.sync config label target
+                            | Podcast ->
+                                PodcastDl.executableName, PodcastDl.buildSyncArgs config label target, PodcastDl.sync config label target
+
                         let commandLine = formatCommand executableName args
                         printfn "Syncing '%s'..." label
                         logInfo logger $"Running: {commandLine}"
-                        let! result = sync config label entry
+                        let! result = sync
                         let logPath = syncLogFile label
                         writeProcessLog logPath commandLine result
                         logInfo logger $"Wrote log to {logPath}"

@@ -1,8 +1,8 @@
-module YtArchive.ProcessRunner
+module Archivist.ProcessRunner
 
 open System.Diagnostics
 open System.Threading.Tasks
-open YtArchive.Domain
+open Archivist.Domain
 
 let run (fileName: string) (args: string list) : Task<ProcessResult> =
     task {

@@ -3,8 +3,11 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(PublishSingleFile)' == ''">
+    <PublishSingleFile>false</PublishSingleFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,6 +16,7 @@
     <Compile Include="ConfigStore.fs" />
     <Compile Include="ProcessRunner.fs" />
     <Compile Include="YtDlp.fs" />
+    <Compile Include="PodcastDl.fs" />
     <Compile Include="Cli.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

@@ -64,6 +64,26 @@ archivist list-targets
 archivist show-target youtube-linux
 ```
 
+Current CLI shape:
+
+```bash
+archivist add --url https://www.youtube.com/example --label youtube-linux --type youtube
+archivist add --url https://example.com/feed.xml --label my-podcast --type podcast --output podcasts/my-podcast
+archivist sync my-podcast
+```
+
+Podcast targets run `deno x podcast-dl ...` under the hood. By default, podcast directories and archive files use podcast-dl templates under `podcast_dir`:
+
+```text
+{{podcast_title}}/
+  archive.json
+  {{release_year}}-{{release_month}}-{{release_day}} - {{title}}
+```
+
+For podcast targets, `--output` overrides the episode filename template, not the podcast directory. If omitted, `default_podcast_template` is used.
+
+For tests or portable runs, set `ARCHIVIST_CONFIG_DIR` to override the default OS config directory.
+
 ## Future GUI direction
 
 The GUI should not directly contain download logic.

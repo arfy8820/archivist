@@ -1,12 +1,12 @@
-module YtArchive.YtDlp
+module Archivist.YtDlp
 
 open System
 open System.IO
 open System.Text.Json
 open System.Threading.Tasks
-open YtArchive.Domain
-open YtArchive.Paths
-open YtArchive.ProcessRunner
+open Archivist.Domain
+open Archivist.Paths
+open Archivist.ProcessRunner
 
 let executableName = "yt-dlp"
 
@@ -45,19 +45,33 @@ let probe (url: string) : Task<ProbeOutcome> =
                 return ProbeFailed $"Failed to parse yt-dlp metadata: {ex.Message}"
     }
 
-let buildSyncArgs (config: Config) (label: string) (entry: ArchiveEntry) =
+let private pathCombineForTemplate left right =
+    if String.IsNullOrWhiteSpace left then right
+    elif String.IsNullOrWhiteSpace right then left
+    else Path.Combine(left, right)
+
+let private outputTemplate (config: Config) (target: Target) =
+    match target.outputTemplate with
+    | Some template when not (String.IsNullOrWhiteSpace template) -> template
+    | _ ->
+        target.subdir
+        |> Option.defaultValue ""
+        |> fun subdir -> pathCombineForTemplate subdir config.defaultOutputTemplate
+
+let buildSyncArgs (config: Config) (label: string) (target: Target) =
     let archivePath = archiveFile config label
 
-    [ "--download-archive"; archivePath; "--paths"; config.baseDir]
-    @
-    match entry.outputTemplate with
-    | Some template -> [ "-o"; template ]
-    | None -> []
-    @ [ entry.url ]
+    [ "--download-archive"
+      archivePath
+      "--paths"
+      config.baseDir
+      "-o"
+      outputTemplate config target
+      target.url ]
 
-let sync (config: Config) (label: string) (entry: ArchiveEntry) : Task<ProcessResult> =
+let sync (config: Config) (label: string) (target: Target) : Task<ProcessResult> =
     task {
         Directory.CreateDirectory(archiveDirectory config) |> ignore
-        let args = buildSyncArgs config label entry
+        let args = buildSyncArgs config label target
         return! run executableName args
     }

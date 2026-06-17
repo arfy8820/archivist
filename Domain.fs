@@ -1,23 +1,82 @@
 module Archivist.Domain
 
-type Tool =
-    | YtDlp
-    | PodcastDl
+open System
+open System.Text.Json
+open System.Text.Json.Serialization
+
+type SourceType =
+    | YouTube
+    | Podcast
+
+let sourceTypeName sourceType =
+    match sourceType with
+    | YouTube -> "youtube"
+    | Podcast -> "podcast"
+
+let tryParseSourceType (value: string) =
+    if String.IsNullOrWhiteSpace value then
+        None
+    else
+        match value.Trim().ToLowerInvariant() with
+        | "youtube"
+        | "yt"
+        | "yt-dlp" -> Some YouTube
+        | "podcast"
+        | "podcast-dl"
+        | "rss" -> Some Podcast
+        | _ -> None
 
 type Target =
     { name: string
       url: string
-      tool: Tool
-      outputTemplate: string option
-      options: Map<string, string> option }
+      mode: string
+      subdir: string option
+      [<JsonPropertyName("output_template")>]
+      outputTemplate: string option }
+
+let private targetMode (target: Target) =
+    if String.IsNullOrWhiteSpace target.mode then "auto"
+    else target.mode.Trim().ToLowerInvariant()
+
+let private inferSourceType (url: string) =
+    let value = if isNull url then "" else url.ToLowerInvariant()
+
+    if value.Contains("youtube.com")
+       || value.Contains("youtu.be")
+       || value.Contains("soundcloud.com") then
+        YouTube
+    elif value.Contains("feed")
+         || value.Contains("rss")
+         || value.EndsWith(".xml")
+         || value.Contains("libsyn.com")
+         || value.Contains("megaphone.fm")
+         || value.Contains("supportingcast.fm") then
+        Podcast
+    else
+        YouTube
+
+let targetSourceType (target: Target) =
+    match targetMode target with
+    | "podcast"
+    | "podcast-dl"
+    | "rss" -> Podcast
+    | "youtube"
+    | "yt"
+    | "yt-dlp" -> YouTube
+    | _ -> inferSourceType target.url
 
 type Config =
-    { youtubeDir: string
+    { [<JsonPropertyName("base_dir")>]
+      baseDir: string
+      [<JsonPropertyName("podcast_dir")>]
       podcastDir: string
-      targets: list Target
-      ytDlpOptions: Map<string, string>
-      PodcastDlOptions: Map<string, string>
-}
+      [<JsonPropertyName("default_output_template")>]
+      defaultOutputTemplate: string
+      [<JsonPropertyName("default_podcast_template")>]
+      defaultPodcastTemplate: string
+      targets: Target list
+      [<JsonPropertyName("yt_dlp")>]
+      ytDlp: JsonElement option }
 
 type ProcessResult =
     { exitCode: int
@@ -31,7 +90,8 @@ type SyncTarget =
 type AddRequest =
     { url: string option
       label: string option
-      outputTemplate: string option }
+      outputTemplate: string option
+      sourceType: SourceType option }
 
 type ResolvedAdd =
     { label: string
@@ -52,19 +112,13 @@ type ParsedInput =
     { options: GlobalOptions
       command: Command }
 
-type YoutubeInfo =
+type ProbeInfo =
     { channel: string option
       channelId: string option
       channelHandle: string option
       uploader: string option
       uploaderId: string option }
 
-type PodcastInfo =
-    { title: string option
-	  description: string option }
-
-
 type ProbeOutcome =
-    | YoutubeProbe of YoutubeInfo
-	| podcastProbe of PodcastInfo
+    | ProbeSuccess of ProbeInfo
     | ProbeFailed of error: string
