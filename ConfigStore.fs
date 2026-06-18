@@ -98,9 +98,7 @@ let private parseConfig (json: string) =
       targets = targets
       ytDlp = tryGetJson [ "yt_dlp"; "ytDlp" ] root }
 
-let load () : Result<Config, string> =
-    let path = configFile ()
-
+let loadFrom (path: string) : Result<Config, string> =
     try
         if File.Exists path then
             let json = File.ReadAllText path
@@ -110,14 +108,20 @@ let load () : Result<Config, string> =
     with ex ->
         Error $"Failed to load config from '{path}': {ex.Message}"
 
-let save (config: Config) : Result<unit, string> =
-    let directory = configDirectory ()
-    let path = configFile ()
+let load () : Result<Config, string> =
+    loadFrom (configFile ())
+
+let saveTo (path: string) (config: Config) : Result<unit, string> =
+    let directory = Path.GetDirectoryName(path)
 
     try
-        Directory.CreateDirectory(directory) |> ignore
+        if not (String.IsNullOrWhiteSpace directory) then
+            Directory.CreateDirectory(directory) |> ignore
         let json = JsonSerializer.Serialize(config, serializerOptions)
         File.WriteAllText(path, json)
         Ok ()
     with ex ->
         Error $"Failed to save config to '{path}': {ex.Message}"
+
+let save (config: Config) : Result<unit, string> =
+    saveTo (configFile ()) config

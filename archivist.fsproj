@@ -7,8 +7,12 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(PublishSingleFile)' == ''">
-    <PublishSingleFile>true</PublishSingleFile>
+    <PublishSingleFile>false</PublishSingleFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Argu" Version="6.2.5" />
+  </ItemGroup>
 
   <ItemGroup>
     <Compile Include="Domain.fs" />

@@ -1,183 +1,42 @@
-Nice one! Ok. I have some more notes, and changes to make.
-
-First. For podcasts, let's just let podcast DL handle creating the directory for each podcast. From a python sketch of the idea, I had the following.
+Now that the basic outline of the program is working again, with podcast-dl support, let's rewrite the command-line parser using argu. Here is the template I would like, based on code using argparse in python.
 
 ```python
-base_dir = Path('e:/music/podcasts').expanduser().resolve()
-dir_template = str(base_dir / "{{podcast_title}}")
-out_template = "{{release_year}}-{{release_month}}-{{release_day}} - {{title}}"
-archive_template = str(base_dir / "{{podcast_title}}" / "archive.json")
-threads = 3
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="yt-archive", description="Archive YouTube channels, playlists, and podcasts via yt-dlp.")
+    parser.add_argument("--config", "-c", help="Path to config file. Defaults to the platform config directory.")
+    parser.add_argument("--json", "-j", action="store_true", help="Emit JSON output.")
+    parser.add_argument("--quiet", action="store_true", help="Reduce human-readable output where possible.")
+    parser.add_argument("--version", "-v", action="version", version=f"%(prog)s version {VERSION} using yt-dlp {YTDLPVERSION}.")
 
-def podcast_dl(args: list[str]):
-    """Use deno to run podcast-dl direct from npm with the given list of args."""
-    code = subprocess.run(["dx", "podcast-dl", *args]).returncode
-    print(f"podcast-dl exited with code {code}.")
-    return code
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    subparsers.add_parser("list", help="List configured targets.")
+
+    config_parser = subparsers.add_parser("config", help="Show or set global configuration options.")
+    config_subparsers = config_parser.add_subparsers(dest="action", help="The action to perform on the config")
+    show_parser = config_subparsers.add_parser("show", help="Display global properties from the configuration")
+    show_parser.add_argument("property", help="The proprety of the config to show, leave empty to show global properties, and summaries for targets and yt_dlp", nargs="?")
+    set_parser = config_subparsers.add_parser("set", help="Set or clear a configuration option.")
+    set_parser.add_argument("property", help="The configuration property to modify", choices=["base_dir", "podcast_dir", "default_output_template", "podcast_template", "targets", "yt_dlp"])
+    set_parser.add_argument("value", help="The value of the property. Leave empty to clear, if valid.", nargs="?")
+
+    probe_parser = subparsers.add_parser("probe", help="Probe a target and report detected mode.")
+    probe_parser.add_argument("name")
+
+    sync_parser = subparsers.add_parser("sync", help="Sync one target or all targets. Defaults to all targets.")
+    sync_parser.add_argument("name", nargs="?", help="Optional target name. Omit to sync all targets.")
+    sync_parser.add_argument("--all", action="store_true", help="Sync all configured targets.")
+
+    add_parser = subparsers.add_parser("add", help="Add a target to the config.")
+    add_parser.add_argument("--url", help="YouTube channel or playlist URL.")
+    add_parser.add_argument("--label", help="Label used as the target name and default subdirectory.")
+    add_parser.add_argument("--output", help="Optional per-target output template override.")
+
+    remove_parser = subparsers.add_parser("remove", help="Remove a target from the config.")
+    remove_parser.add_argument("name", help="Target name to remove.")
+    remove_parser.add_argument("--delete-archive", action="store_true", help="Also delete the target's yt-dlp archive file if it exists.")
     
-def download(name: str, url: str):
-    print(f"Downloading podcast {name}")
-    args = ["--out-dir", dir_template, "--url", url, "--threads", str(threads), "--episode-template", out_template, "--archive", archive_template, '--include-meta', '--include-episode-meta']
-    return podcast_dl(args)
-
-def run_with_cmdline(url: str, args: list[str]):
-    return podcast_dl(['--url', url ] + args)
-
+    return parser
 ```
-Perhaps those could be default templates if none is given in the config.
-Also, for probing for a label, the first line of output from the --info option gives the title of the podcast. That would make a good user label once sluggified/sanitised.
-podcast-dl --info --url <podcast-url>
 
-Next. This is the latest config file format I came up with while working on a python version of this tool, now being backported to F#. Have the tool accept this new format, and adjust the types and config parsing as appropriate.
-
-```json
-{
-  "base_dir": "E:/videos",
-  "podcast_dir": "e:/music/podcasts",
-  "default_output_template": "%(playlist)s/%(upload_date>%Y-%m-%d)s - %(title)s.%(ext)s",
-  "default_podcast_template": "%(upload_date>%Y-%m-%d)s - %(title)s.%(ext)s",
-  "targets": [
-    {
-      "name": "6ixandout",
-      "url": "https://www.youtube.com/channel/UCevAMToIcpXXvk58rBArikA",
-      "mode": "auto",
-      "subdir": "6ixandout"
-    },
-    {
-      "name": "audiopanicroom",
-      "url": "http://feeds.feedburner.com/AudioPanicRoom",
-      "mode": "podcast",
-      "subdir": "audiopanicroom"
-    },
-    {
-      "name": "blaze",
-      "url": "https://www.youtube.com/channel/UCYY5GWf7MHFJ6DZeHreoXgw",
-      "mode": "auto",
-      "subdir": "blaze"
-    },
-    {
-      "name": "bosman",
-      "url": "https://www.youtube.com/channel/UCJCYqkT8zmkrjmPvRPWSb5w",
-      "mode": "auto",
-      "subdir": "bosman"
-    },
-    {
-      "name": "cautionarytales",
-      "url": "https://pushkin.supportingcast.fm/content/eyJ0IjoicCIsImMiOiIxNTAzIiwidSI6IjI1MjMzMjciLCJkIjoiMTYzNjM0MDk5MyIsImsiOjIzMH18OTRiZGY5YTNkZmQwNjgwODI1MDY2ODk2NmQwNjAyODBlNmU3YzQ0NmRjZDk5MzdkODkwYjg4OTUzOWM2YTJhMg.rss",
-      "mode": "auto",
-      "subdir": "cautionarytales"
-    },
-    {
-      "name": "darknet-diaries",
-      "url": "https://feeds.megaphone.fm/darknetdiaries",
-      "mode": "auto",
-      "subdir": "darknet-diaries"
-    },
-    {
-      "name": "doorbell",
-      "url": "https://www.youtube.com/channel/UC8bzrhr0AXUsGb2BS8r6Utw/playlists",
-      "mode": "auto",
-      "subdir": "doorbell",
-      "output_template": "%(uploader)s/%(playlist)s/%(playlist_index)s-%(title)s.%(ext)s"
-    },
-    {
-      "name": "elmercat",
-      "url": "https://soundcloud.com/elmercat",
-      "mode": "auto",
-      "subdir": "elmercat"
-    },
-    {
-      "name": "mjg0117",
-      "url": "https://www.youtube.com/channel/UC7JTlTTTr-aPkl1xFj1K0bQ",
-      "mode": "auto",
-      "subdir": "mjg0117"
-    },
-    {
-      "name": "new-rustacean",
-      "url": "https://newrustacean.com/feed.xml",
-      "mode": "auto",
-      "subdir": "new-rustacean"
-    },
-    {
-      "name": "onj",
-      "url": "https://www.youtube.com/channel/UCqtMRZeGSGWMAy0AX31K0MQ",
-      "mode": "auto",
-      "subdir": "onj"
-    },
-    {
-      "name": "revolutions",
-      "url": "http://revolutionspodcast.libsyn.com/rss/",
-      "mode": "podcast",
-      "subdir": "revolutions"
-    },
-    {
-      "name": "rosie",
-      "url": "https://www.youtube.com/channel/UCpF50xS1DHyjtBQ2qnOMcRg",
-      "mode": "auto",
-      "subdir": "rosie"
-    },
-    {
-      "name": "sarcastic",
-      "url": "https://www.youtube.com/channel/UCodbH5mUeF-m_BsNueRDjcw",
-      "mode": "auto",
-      "subdir": "sarcastic"
-    },
-    {
-      "name": "schmoyoho",
-      "url": "https://www.youtube.com/channel/UCNYrK4tc5i1-eL8TXesH2pg",
-      "mode": "auto",
-      "subdir": "schmoyoho"
-    },
-    {
-      "name": "the-gilded-shadows",
-      "url": "https://www.youtube.com/channel/UC-4jEQ_P3zxF88uN6qfQvsQ",
-      "mode": "auto",
-      "subdir": "the-gilded-shadows"
-    },
-    {
-      "name": "veritasium",
-      "url": "https://www.youtube.com/@veritasium",
-      "mode": "auto",
-      "subdir": "veritasium"
-    },
-    {
-      "name": "visual-venture",
-      "url": "https://youtube.com/@VisualVenture",
-      "mode": "auto",
-      "subdir": "visual-venture"
-    }
-  ],
-  "yt_dlp": {
-    "ignoreerrors": "only_download",
-    "retries": 10,
-    "fragment_retries": 10,
-    "cookiesfrombrowser": [
-      "firefox",
-      null,
-      null,
-      null
-    ],
-    "extract_flat": "discard_in_playlist",
-    "postprocessors": [
-      {
-        "key": "FFmpegExtractAudio",
-        "preferredcodec": "best",
-        "preferredquality": "5",
-        "nopostoverwrites": false
-      },
-      {
-        "key": "FFmpegMetadata",
-        "add_chapters": true,
-        "add_metadata": true,
-        "add_infojson": "if_exists"
-      },
-      {
-        "key": "FFmpegConcat",
-        "only_multi_video": true,
-        "when": "playlist"
-      }
-    ],
-    "warn_when_outdated": true
-  }
-}
-```
+This will allow for much ritcher config editing, among other things. and using a well-known parser system rather than a hand-rolled parser.

@@ -66,7 +66,7 @@ let targetSourceType (target: Target) =
     | _ -> inferSourceType target.url
 
 type Config =
-    { [<JsonPropertyName("youtube_dir")>]
+    { [<JsonPropertyName("base_dir")>]
       youtubeDir: string
       [<JsonPropertyName("podcast_dir")>]
       podcastDir: string
@@ -87,6 +87,19 @@ type SyncTarget =
     | One of label: string
     | All
 
+type ConfigProperty =
+    | AllProperties
+    | BaseDir
+    | PodcastDir
+    | DefaultOutputTemplate
+    | DefaultPodcastTemplate
+    | Targets
+    | YtDlp
+
+type ConfigAction =
+    | Show of ConfigProperty
+    | Set of ConfigProperty * value: string option
+
 type AddRequest =
     { url: string option
       label: string option
@@ -102,11 +115,15 @@ type Command =
     | Remove of label: string * removeArchive: bool
     | List
     | Sync of SyncTarget
-    | Config of newBaseDir: string option
+    | Config of ConfigAction
+    | Probe of name: string
+    | Version
     | Usage of error: string option
 
 type GlobalOptions =
-    { verbose: bool }
+    { configPath: string option
+      emitJson: bool
+      quiet: bool }
 
 type ParsedInput =
     { options: GlobalOptions
