@@ -39,7 +39,8 @@ let defaultConfig () : Config =
       defaultYoutubeTemplate = "%(playlist)s/%(upload_date>%Y-%m-%d)s - %(title)s.%(ext)s"
       defaultPodcastTemplate = "{{release_year}}-{{release_month}}-{{release_day}} - {{title}}"
       targets = []
-      ytDlp = None }
+      ytDlpOptions = None 
+      podcastDlOptions = None }
 
 let private parseNewTargets (root: JsonElement) =
     match tryGetProperty [ "targets" ] root with
@@ -96,7 +97,9 @@ let private parseConfig (json: string) =
         tryGetString [ "default_podcast_template"; "defaultPodcastTemplate" ] root
         |> Option.defaultValue defaults.defaultPodcastTemplate
       targets = targets
-      ytDlp = tryGetJson [ "yt_dlp"; "ytDlp" ] root }
+      ytDlpOptions = tryGetJson [ "yt_dlp"; "yt_dlp_opts"; "ytDlp" ] root
+      podcastDlOptions = tryGetJson [ "podcast-dl"; "podcastDL"; "podcast_dl_opts" ] root }
+
 
 let loadFrom (path: string) : Result<Config, string> =
     try

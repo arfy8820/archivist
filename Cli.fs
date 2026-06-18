@@ -13,20 +13,27 @@ let private parseConfigProperty (value: string option) =
     | Some "base_dir"
     | Some "base-dir"
     | Some "youtube_dir"
-    | Some "youtube-dir" -> Ok BaseDir
+    | Some "youtube-dir" -> Ok YoutubeDir
     | Some "podcast_dir"
     | Some "podcast-dir" -> Ok PodcastDir
     | Some "default_output_template"
     | Some "default-output-template"
     | Some "default_youtube_template"
-    | Some "default-youtube-template" -> Ok DefaultOutputTemplate
+    | Some "default-youtube-template" -> Ok DefaultYoutubeTemplate
     | Some "podcast_template"
     | Some "podcast-template"
     | Some "default_podcast_template"
     | Some "default-podcast-template" -> Ok DefaultPodcastTemplate
     | Some "targets" -> Ok Targets
     | Some "yt_dlp"
-    | Some "yt-dlp" -> Ok YtDlp
+    | Some "yt_dlp_opts"
+    | Some "yt_dlp_options"
+    | Some "yt-dlp" -> Ok YtDlpOptions
+    | Some "podcast_dl"
+    | Some "podcast_dl_opts"
+    | Some "podcast_dl_options"
+    | Some "podcast-dl"
+    | Some "podcast-dl-options" -> Ok PodcastDlOptions
     | Some unknown -> Error $"Unknown config property: {unknown}"
 
 type AddArgs =
@@ -44,32 +51,40 @@ type AddArgs =
             | Type _ -> "Target type: auto, youtube, or podcast."
 
 type RemoveArgs =
-    | [<MainCommand>] Name of string
+    | [<MainCommand>] Remove_Name of string
     | Delete_Archive
 
     interface IArgParserTemplate with
         member arg.Usage =
             match arg with
-            | Name _ -> "Target name to remove."
+            | Remove_Name _ -> "Target name to remove."
             | Delete_Archive -> "Also delete the target archive file if it exists."
 
 type SyncArgs =
-    | [<MainCommand>] Name of string
+    | [<MainCommand>] Sync_Name of string
     | All
 
     interface IArgParserTemplate with
         member arg.Usage =
             match arg with
-            | Name _ -> "Optional target name. Omit to sync all targets."
+            | Sync_Name _ -> "Optional target name. Omit to sync all targets."
             | All -> "Sync all configured targets."
 
 type ProbeArgs =
-    | [<MainCommand>] Name of string
+    | [<MainCommand>] Probe_Name of string
 
     interface IArgParserTemplate with
         member arg.Usage =
             match arg with
-            | Name _ -> "Target name to probe."
+            | Probe_Name _ -> "Target name to probe."
+
+type ListArgs =
+    | No_Arguments
+
+    interface IArgParserTemplate with
+        member arg.Usage =
+            match arg with
+            | No_Arguments -> "No arguments."
 
 type ConfigShowArgs =
     | [<MainCommand>] Property of string
@@ -88,21 +103,21 @@ type ConfigSetArgs =
             | Arguments _ -> "Configuration property and optional value."
 
 type ConfigArgs =
-    | [<CliPrefix(CliPrefix.None)>] Show of ParseResults<ConfigShowArgs>
-    | [<CliPrefix(CliPrefix.None)>] Set of ParseResults<ConfigSetArgs>
+    | [<CliPrefix(CliPrefix.None); CustomCommandLine("show")>] Config_Show of ParseResults<ConfigShowArgs>
+    | [<CliPrefix(CliPrefix.None); CustomCommandLine("set")>] Config_Set of ParseResults<ConfigSetArgs>
 
     interface IArgParserTemplate with
         member arg.Usage =
             match arg with
-            | Show _ -> "Display global properties from the configuration."
-            | Set _ -> "Set or clear a configuration option."
+            | Config_Show _ -> "Display global properties from the configuration."
+            | Config_Set _ -> "Set or clear a configuration option."
 
 type CliArgs =
     | [<AltCommandLine("-c")>] Config_File of string
     | [<AltCommandLine("-j")>] Json
     | Quiet
     | [<AltCommandLine("-v")>] Version
-    | [<CliPrefix(CliPrefix.None)>] List
+    | [<CliPrefix(CliPrefix.None); CustomCommandLine("list")>] List of ParseResults<ListArgs>
     | [<CliPrefix(CliPrefix.None)>] Config of ParseResults<ConfigArgs>
     | [<CliPrefix(CliPrefix.None)>] Probe of ParseResults<ProbeArgs>
     | [<CliPrefix(CliPrefix.None)>] Sync of ParseResults<SyncArgs>
@@ -116,7 +131,7 @@ type CliArgs =
             | Json -> "Emit JSON output."
             | Quiet -> "Reduce human-readable output where possible."
             | Version -> $"Emit version information."
-            | List -> "List configured targets."
+            | List _ -> "List configured targets."
             | Config _ -> "Show or set global configuration options."
             | Probe _ -> "Probe a target and report detected mode."
             | Sync _ -> "Sync one target or all targets. Defaults to all targets."
@@ -137,12 +152,12 @@ let private typeFromText (value: string option) =
 
 let private commandFromConfig (args: ParseResults<ConfigArgs>) =
     match args.GetSubCommand() with
-    | Show showArgs ->
-        showArgs.TryGetResult Property
+    | Config_Show showArgs ->
+        showArgs.TryGetResult(<@ Property @>)
         |> parseConfigProperty
         |> Result.map (fun property -> Command.Config(ConfigAction.Show property))
-    | Set setArgs ->
-        match setArgs.TryGetResult Arguments with
+    | Config_Set setArgs ->
+        match setArgs.TryGetResult(<@ Arguments @>) with
         | None
         | Some [] -> Error "Usage: archivist config set <property> [value]"
         | Some (propertyName :: valueParts) ->
@@ -160,33 +175,37 @@ let private commandFromConfig (args: ParseResults<ConfigArgs>) =
 let private commandFromParsed (results: ParseResults<CliArgs>) =
     try
         match results.GetSubCommand() with
-        | List -> Ok Command.List
+        | List _ -> Ok Command.List
         | Config configArgs -> commandFromConfig configArgs
         | Probe probeArgs ->
-            match probeArgs.TryGetResult Name with
+            match probeArgs.TryGetResult(<@ Probe_Name @>) with
             | Some name -> Ok(Command.Probe name)
             | None -> Error "Usage: archivist probe <name>"
         | Sync syncArgs ->
-            match syncArgs.Contains All, syncArgs.TryGetResult Name with
+            match syncArgs.Contains(<@ All @>), syncArgs.TryGetResult(<@ Sync_Name @>) with
             | true, Some _ -> Error "Use either 'sync --all' or 'sync <name>', not both."
             | true, None -> Ok(Command.Sync SyncTarget.All)
             | false, Some name -> Ok(Command.Sync(SyncTarget.One name))
             | false, None -> Ok(Command.Sync SyncTarget.All)
         | Add addArgs ->
-            match typeFromText (addArgs.TryGetResult Type) with
+            match typeFromText (addArgs.TryGetResult(<@ Type @>)) with
             | Error error -> Error error
             | Ok sourceType ->
                 Ok(
                     Command.Add
-                        { url = addArgs.TryGetResult Url
-                          label = addArgs.TryGetResult Label
-                          outputTemplate = addArgs.TryGetResult Output
+                        { url = addArgs.TryGetResult(<@ Url @>)
+                          label = addArgs.TryGetResult(<@ Label @>)
+                          outputTemplate = addArgs.TryGetResult(<@ Output @>)
                           sourceType = sourceType }
                 )
         | Remove removeArgs ->
-            match removeArgs.TryGetResult Name with
-            | Some name -> Ok(Command.Remove(name, removeArgs.Contains Delete_Archive))
+            match removeArgs.TryGetResult(<@ Remove_Name @>) with
+            | Some name -> Ok(Command.Remove(name, removeArgs.Contains(<@ Delete_Archive @>)))
             | None -> Error "Usage: archivist remove <name> [--delete-archive]"
+        | Config_File _
+        | Json
+        | Quiet
+        | Version -> Error(parser.PrintUsage())
     with _ ->
         Error(parser.PrintUsage())
 
@@ -195,12 +214,12 @@ let parseArgs (argv: string array) : ParsedInput =
         let results = parser.ParseCommandLine(inputs = argv, raiseOnUsage = true)
 
         let options =
-            { configPath = results.TryGetResult Config_File
-              emitJson = results.Contains Json
-              quiet = results.Contains Quiet }
+            { configPath = results.TryGetResult(<@ Config_File @>)
+              emitJson = results.Contains(<@ Json @>)
+              quiet = results.Contains(<@ Quiet @>) }
 
         let command =
-            if results.Contains Version then
+            if results.Contains(<@ Version @>) then
                 Command.Version
             else
                 match commandFromParsed results with

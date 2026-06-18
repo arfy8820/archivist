@@ -10,7 +10,6 @@ open Archivist.Paths
 open Archivist.ConfigStore
 open Archivist.YtDlp
 open Archivist.PodcastDl
-open Archivist.Cli
 
 let private stringOptionOfNullable (value: string | null) =
     if isNull value then None else Some value
@@ -353,31 +352,43 @@ let private showConfigProperty (options: GlobalOptions) (config: Config) (proper
     if options.emitJson then
         match property with
         | AllProperties -> printJson config
-        | BaseDir -> printJson {| base_dir = config.youtubeDir |}
+        | YoutubeDir ->  printJson {| youtube_dir = config.youtubeDir |}
         | PodcastDir -> printJson {| podcast_dir = config.podcastDir |}
-        | DefaultOutputTemplate -> printJson {| default_output_template = config.defaultYoutubeTemplate |}
+        | DefaultYoutubeTemplate -> printJson {| default_youtube_template = config.defaultYoutubeTemplate |}
         | DefaultPodcastTemplate -> printJson {| default_podcast_template = config.defaultPodcastTemplate |}
         | Targets -> printJson config.targets
-        | YtDlp ->
-            match config.ytDlp with
+        | YtDlpOptions ->
+            match config.ytDlpOptions with
             | Some value -> printfn "%s" (value.GetRawText())
             | None -> printfn "null"
+        | PodcastDlOptions ->
+            match config.podcastDlOptions with
+            | Some value -> printfn "%s" (value.GetRawText())
+            | None -> printfn "null"
+
     else
         match property with
         | AllProperties ->
-            printfn "base_dir: %s" config.youtubeDir
+            printfn "youtube_dir: %s" config.youtubeDir
             printfn "podcast_dir: %s" config.podcastDir
-            printfn "default_output_template: %s" config.defaultYoutubeTemplate
+            printfn "default_youtube_template: %s" config.defaultYoutubeTemplate
             printfn "default_podcast_template: %s" config.defaultPodcastTemplate
             printfn "targets: %d" config.targets.Length
-            printfn "yt_dlp: %s" (if config.ytDlp.IsSome then "configured" else "unset")
-        | BaseDir -> printfn "%s" config.youtubeDir
+            printfn "yt_dlp_options: %s" (if config.ytDlpOptions.IsSome then "configured" else "unset")
+            printfn "podcast_dl_options: %s" (if config.podcastDlOptions.IsSome then "configured" else "unset")
+
+        | YoutubeDir -> printfn "%s" config.youtubeDir
         | PodcastDir -> printfn "%s" config.podcastDir
-        | DefaultOutputTemplate -> printfn "%s" config.defaultYoutubeTemplate
+        | DefaultYoutubeTemplate -> printfn "%s" config.defaultYoutubeTemplate
         | DefaultPodcastTemplate -> printfn "%s" config.defaultPodcastTemplate
         | Targets -> printJson config.targets
-        | YtDlp ->
-            match config.ytDlp with
+        | YtDlpOptions ->
+            match config.ytDlpOptions with
+            | Some value -> printfn "%s" (value.GetRawText())
+            | None -> printfn "null"
+
+        | PodcastDlOptions ->
+            match config.podcastDlOptions with
             | Some value -> printfn "%s" (value.GetRawText())
             | None -> printfn "null"
 
@@ -390,20 +401,20 @@ let private parseJsonElement (value: string) =
 
 let private setConfigProperty (config: Config) (property: ConfigProperty) (value: string option) =
     match property with
-    | AllProperties -> Error "Cannot set all config properties at once."
-    | BaseDir ->
+    | ConfigProperty.AllProperties -> Error "Cannot set all config properties at once."
+    | ConfigProperty.YoutubeDir ->
         match value with
         | Some text when not (String.IsNullOrWhiteSpace text) -> Ok { config with youtubeDir = text }
-        | _ -> Error "base_dir requires a value."
-    | PodcastDir ->
+        | _ -> Error "youtube_dir requires a value."
+    | ConfigProperty.PodcastDir ->
         match value with
         | Some text when not (String.IsNullOrWhiteSpace text) -> Ok { config with podcastDir = text }
         | _ -> Error "podcast_dir requires a value."
-    | DefaultOutputTemplate ->
+    | ConfigProperty.DefaultYoutubeTemplate ->
         Ok { config with defaultYoutubeTemplate = value |> Option.defaultValue "" }
-    | DefaultPodcastTemplate ->
+    | ConfigProperty.DefaultPodcastTemplate ->
         Ok { config with defaultPodcastTemplate = value |> Option.defaultValue "" }
-    | Targets ->
+    | ConfigProperty.Targets ->
         match value with
         | None
         | Some "" -> Ok { config with targets = [] }
@@ -413,20 +424,29 @@ let private setConfigProperty (config: Config) (property: ConfigProperty) (value
                 Ok { config with targets = targets }
             with ex ->
                 Error $"targets must be a JSON array: {ex.Message}"
-    | YtDlp ->
+    | ConfigProperty.YtDlpOptions ->
         match value with
         | None
-        | Some "" -> Ok { config with ytDlp = None }
+        | Some "" -> Ok { config with ytDlpOptions = None }
         | Some text ->
             parseJsonElement text
-            |> Result.map (fun json -> { config with ytDlp = Some json })
+            |> Result.map (fun json -> { config with ytDlpOptions = Some json })
+
+    | ConfigProperty.PodcastDlOptions ->
+        match value with
+        | None
+        | Some "" -> Ok { config with podcastDlOptions = None }
+        | Some text ->
+            parseJsonElement text
+            |> Result.map (fun json -> { config with podcastDlOptions = Some json })
+
 
 let private handleConfig (options: GlobalOptions) (configPath: string) (config: Config) (action: ConfigAction) : int =
     match action with
-    | Show property ->
+    | ConfigAction.Show property ->
         showConfigProperty options config property
         0
-    | Set(property, value) ->
+    | ConfigAction.Set(property, value) ->
         match setConfigProperty config property value with
         | Error error ->
             eprintfn "%s" error
@@ -455,11 +475,11 @@ let private handleProbe (options: GlobalOptions) (config: Config) (name: string)
 
 let private getSyncEntries (config: Config) (target: SyncTarget) =
     match target with
-    | One label ->
+    | SyncTarget.One label ->
         match config.targets |> List.tryFind (fun target -> target.name = label) with
         | Some target -> Ok [ target ]
         | None -> Error $"No entry found for label '{label}'."
-    | All ->
+    | SyncTarget.All ->
         Ok config.targets
 
 let private printSyncResult (label: string) (result: ProcessResult) =
@@ -520,43 +540,43 @@ let private handleSync (logger: Logger) (config: Config) (target: SyncTarget) : 
 let private runCommand (logger: Logger) (options: GlobalOptions) (configPath: string) (config: Config) (command: Command) : Task<int> =
     task {
         match command with
-        | Add request ->
+        | Command.Add request ->
             return! handleAdd logger configPath config request
-        | Remove(label, removeArchive) ->
+        | Command.Remove(label, removeArchive) ->
             return handleRemove configPath config label removeArchive
-        | List ->
+        | Command.List ->
             return handleList options config
-        | Sync target ->
+        | Command.Sync target ->
             return! handleSync logger config target
-        | Config action ->
+        | Command.Config action ->
             return handleConfig options configPath config action
-        | Probe name ->
+        | Command.Probe name ->
             return handleProbe options config name
-        | Version ->
+        | Command.Version ->
             if options.emitJson then
-                printJson {| version = version |}
+                printJson {| version = Archivist.Cli.version |}
             else
-                printfn "archivist version %s" version
+                printfn "archivist version %s" Archivist.Cli.version
             return 0
-        | Usage error ->
-            printUsage error
+        | Command.Usage error ->
+            Archivist.Cli.printUsage error
             return 2
     }
 
 let private runMain (argv: string array) : Task<int> =
     task {
-        let parsed = parseArgs argv
+        let parsed = Archivist.Cli.parseArgs argv
         let logger = { quiet = parsed.options.quiet }
 
         match parsed.command with
-        | Usage error ->
-            printUsage error
+        | Command.Usage error ->
+            Archivist.Cli.printUsage error
             return 2
-        | Version ->
+        | Command.Version ->
             if parsed.options.emitJson then
-                printJson {| version = version |}
+                printJson {| version = Archivist.Cli.version |}
             else
-                printfn "archivist version %s" version
+                printfn "archivist version %s" Archivist.Cli.version
             return 0
         | _ ->
             let configPath = parsed.options.configPath |> Option.defaultValue (configFile ())

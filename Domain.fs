@@ -66,7 +66,7 @@ let targetSourceType (target: Target) =
     | _ -> inferSourceType target.url
 
 type Config =
-    { [<JsonPropertyName("base_dir")>]
+    { [<JsonPropertyName("youtube_dir")>]
       youtubeDir: string
       [<JsonPropertyName("podcast_dir")>]
       podcastDir: string
@@ -75,8 +75,11 @@ type Config =
       [<JsonPropertyName("default_podcast_template")>]
       defaultPodcastTemplate: string
       targets: Target list
-      [<JsonPropertyName("yt_dlp")>]
-      ytDlp: JsonElement option }
+      [<JsonPropertyName("yt_dlp_options")>]
+      ytDlpOptions: JsonElement option
+      [<JsonPropertyName("podcast_dl_options")>]
+      podcastDlOptions: JsonElement option }
+
 
 type ProcessResult =
     { exitCode: int
@@ -89,12 +92,14 @@ type SyncTarget =
 
 type ConfigProperty =
     | AllProperties
-    | BaseDir
+    | YoutubeDir
     | PodcastDir
-    | DefaultOutputTemplate
+    | DefaultYoutubeTemplate
     | DefaultPodcastTemplate
     | Targets
-    | YtDlp
+    | YtDlpOptions
+    | PodcastDlOptions
+
 
 type ConfigAction =
     | Show of ConfigProperty
