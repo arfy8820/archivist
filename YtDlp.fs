@@ -56,22 +56,22 @@ let private outputTemplate (config: Config) (target: Target) =
     | _ ->
         target.subdir
         |> Option.defaultValue ""
-        |> fun subdir -> pathCombineForTemplate subdir config.defaultOutputTemplate
+        |> fun subdir -> pathCombineForTemplate subdir config.defaultYoutubeTemplate
 
 let buildSyncArgs (config: Config) (label: string) (target: Target) =
-    let archivePath = archiveFile config label
+    let archivePath = youtubeArchiveFile config label
 
     [ "--download-archive"
       archivePath
       "--paths"
-      config.baseDir
+      config.youtubeDir
       "-o"
       outputTemplate config target
       target.url ]
 
 let sync (config: Config) (label: string) (target: Target) : Task<ProcessResult> =
     task {
-        Directory.CreateDirectory(archiveDirectory config) |> ignore
+        Directory.CreateDirectory(youtubeArchiveDirectory config) |> ignore
         let args = buildSyncArgs config label target
         return! run executableName args
     }

@@ -34,9 +34,9 @@ let private tryGetJson names json =
     tryGetProperty names json |> Option.map (fun value -> value.Clone())
 
 let defaultConfig () : Config =
-    { baseDir = defaultBaseDir ()
+    { youtubeDir = defaultYoutubeDir ()
       podcastDir = defaultPodcastDir ()
-      defaultOutputTemplate = "%(playlist)s/%(upload_date>%Y-%m-%d)s - %(title)s.%(ext)s"
+      defaultYoutubeTemplate = "%(playlist)s/%(upload_date>%Y-%m-%d)s - %(title)s.%(ext)s"
       defaultPodcastTemplate = "{{release_year}}-{{release_month}}-{{release_day}} - {{title}}"
       targets = []
       ytDlp = None }
@@ -87,11 +87,11 @@ let private parseConfig (json: string) =
     let targets = parseNewTargets root
     let targets = if List.isEmpty targets then parseLegacyTargets root else targets
 
-    { baseDir = tryGetString [ "base_dir"; "baseDir" ] root |> Option.defaultValue defaults.baseDir
+    { youtubeDir = tryGetString [ "base_dir"; "youtube_dir"; "baseDir"; "youtubeDir" ] root |> Option.defaultValue defaults.youtubeDir
       podcastDir = tryGetString [ "podcast_dir"; "podcastDir" ] root |> Option.defaultValue defaults.podcastDir
-      defaultOutputTemplate =
-        tryGetString [ "default_output_template"; "defaultOutputTemplate" ] root
-        |> Option.defaultValue defaults.defaultOutputTemplate
+      defaultYoutubeTemplate =
+        tryGetString [ "default_output_template"; "defaultOutputTemplate"; "defaultYoutubeTemplate"; "default_youtube_template"] root
+        |> Option.defaultValue defaults.defaultYoutubeTemplate
       defaultPodcastTemplate =
         tryGetString [ "default_podcast_template"; "defaultPodcastTemplate" ] root
         |> Option.defaultValue defaults.defaultPodcastTemplate

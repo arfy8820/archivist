@@ -90,8 +90,8 @@ let private parseSync (args: string list) : Command =
 let private parseConfig (args: string list) : Command =
     match args with
     | [] -> Config None
-    | [ baseDir ] -> Config(Some baseDir)
-    | _ -> Usage(Some "Usage: archivist config [baseDir]")
+    | [ youtubeDir ] -> Config(Some youtubeDir)
+    | _ -> Usage(Some "Usage: archivist config [youtubeDir]")
 
 let private parseCommand (commandName: string) (args: string list) : Command =
     match commandName with

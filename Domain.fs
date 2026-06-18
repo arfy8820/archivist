@@ -66,12 +66,12 @@ let targetSourceType (target: Target) =
     | _ -> inferSourceType target.url
 
 type Config =
-    { [<JsonPropertyName("base_dir")>]
-      baseDir: string
+    { [<JsonPropertyName("youtube_dir")>]
+      youtubeDir: string
       [<JsonPropertyName("podcast_dir")>]
       podcastDir: string
-      [<JsonPropertyName("default_output_template")>]
-      defaultOutputTemplate: string
+      [<JsonPropertyName("default_youtube_template")>]
+      defaultYoutubeTemplate: string
       [<JsonPropertyName("default_podcast_template")>]
       defaultPodcastTemplate: string
       targets: Target list

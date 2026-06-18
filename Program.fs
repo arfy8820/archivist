@@ -100,13 +100,13 @@ let private stableSuggestedLabel (probe: ProbeInfo) =
       probe.uploaderId |> normalizeHandle ]
     |> List.tryPick id
 
-let private ensureBaseDirectory (config: Config) =
+let private ensureYoutubeDirectory (config: Config) =
     try
-        Directory.CreateDirectory(config.baseDir) |> ignore
-        Directory.CreateDirectory(archiveDirectory config) |> ignore
+        Directory.CreateDirectory(config.youtubeDir) |> ignore
+        Directory.CreateDirectory(youtubeArchiveDirectory config) |> ignore
         Ok ()
     with ex ->
-        Error $"Failed to create directories under '{config.baseDir}': {ex.Message}"
+        Error $"Failed to create directories under '{config.youtubeDir}': {ex.Message}"
 
 let private ensureLogDirectory () =
     try
@@ -319,7 +319,7 @@ let private handleRemove (config: Config) (label: string) (removeArchive: bool) 
                 |> Option.map targetSourceType
                 |> Option.defaultValue YouTube
                 |> function
-                    | YouTube -> archiveFile config label
+                    | YouTube -> youtubeArchiveFile config label
                     | Podcast -> podcastArchiveTemplate config
             try
                 if File.Exists path then
@@ -342,15 +342,15 @@ let private handleList (config: Config) : int =
         config.targets |> List.iter printTarget
     0
 
-let private handleConfig (config: Config) (newBaseDir: string option) : int =
-    match newBaseDir with
+let private handleConfig (config: Config) (newYoutubeDir: string option) : int =
+    match newYoutubeDir with
     | None ->
-        printfn "%s" config.baseDir
+        printfn "%s" config.youtubeDir
         0
-    | Some baseDir ->
-        let updated = { config with baseDir = baseDir }
+    | Some youtubeDir ->
+        let updated = { config with youtubeDir = youtubeDir }
 
-        match ensureBaseDirectory updated with
+        match ensureYoutubeDirectory updated with
         | Error error ->
             eprintfn "%s" error
             1
@@ -360,7 +360,7 @@ let private handleConfig (config: Config) (newBaseDir: string option) : int =
                 eprintfn "%s" error
                 1
             | Ok () ->
-                printfn "Base directory updated to '%s'." baseDir
+                printfn "Youtube directory updated to '%s'." youtubeDir
                 0
 
 let private getSyncEntries (config: Config) (target: SyncTarget) =
@@ -376,14 +376,14 @@ let private printSyncResult (label: string) (result: ProcessResult) =
     if result.exitCode = 0 then
         printfn "Sync succeeded for '%s'." label
     else
-        eprintfn "Sync failed for '%s' with exit code %d." label result.exitCode
+        eprintfn "Warning: Sync  for '%s' returned with exit code %d." label result.exitCode
 
     if result.exitCode <> 0 && not (String.IsNullOrWhiteSpace result.stderr) then
         eprintfn "%s" result.stderr
 
 let private handleSync (logger: Logger) (config: Config) (target: SyncTarget) : Task<int> =
     task {
-        match ensureBaseDirectory config with
+        match ensureYoutubeDirectory config with
         | Error error ->
             eprintfn "%s" error
             return 1
@@ -438,8 +438,8 @@ let private runCommand (logger: Logger) (config: Config) (command: Command) : Ta
             return handleList config
         | Sync target ->
             return! handleSync logger config target
-        | Config newBaseDir ->
-            return handleConfig config newBaseDir
+        | Config newYoutubeDir ->
+            return handleConfig config newYoutubeDir
         | Usage error ->
             printUsage error
             return 2

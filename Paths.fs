@@ -19,7 +19,7 @@ let userHomeDirectory () =
     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
     |> nonEmptyOr "."
 
-let defaultBaseDir () =
+let defaultYoutubeDir () =
     Path.Combine(userHomeDirectory (), "Videos", "YouTube")
 
 let defaultPodcastDir () =
@@ -39,11 +39,11 @@ let configFile () =
 let logsDirectory () =
     Path.Combine(configDirectory (), "logs")
 
-let archiveDirectory (config: Config) =
-    Path.Combine(config.baseDir, "archive")
+let youtubeArchiveDirectory (config: Config) =
+    Path.Combine(config.youtubeDir, "archive")
 
-let archiveFile (config: Config) (label: string) =
-    Path.Combine(archiveDirectory config, $"{label}.txt")
+let youtubeArchiveFile (config: Config) (label: string) =
+    Path.Combine(youtubeArchiveDirectory config, $"{label}.txt")
 
 let podcastArchiveTemplate (config: Config) =
     Path.Combine(config.podcastDir, "{{podcast_title}}", "archive.json")
