@@ -245,6 +245,5 @@ let printUsage (error: string option) =
         printfn "%s" message
     | Some message ->
         eprintfn "%s" message
-        // printfn "%s" (parser.PrintUsage())
     | None ->
         printfn "%s" (parser.PrintUsage())
