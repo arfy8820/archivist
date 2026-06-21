@@ -29,8 +29,7 @@ let configDirectory () =
     match envVar "ARCHIVIST_CONFIG_DIR" with
     | Some directory -> directory
     | None ->
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)
-        |> nonEmptyOr (Path.Combine(userHomeDirectory (), ".config"))
+        Path.Combine(userHomeDirectory (), ".config")
         |> fun root -> Path.Combine(root, appName)
 
 let configFile () =
@@ -40,10 +39,10 @@ let logsDirectory () =
     Path.Combine(configDirectory (), "logs")
 
 let youtubeArchiveDirectory (config: Config) =
-    Path.Combine(config.youtubeDir, "archive")
+    config.youtubeDir
 
 let youtubeArchiveFile (config: Config) (label: string) =
-    Path.Combine(youtubeArchiveDirectory config, $"{label}.txt")
+    Path.Combine(youtubeArchiveDirectory config, label, ".download-archive.txt")
 
 let podcastArchiveTemplate (config: Config) =
     Path.Combine(config.podcastDir, "{{podcast_title}}", "archive.json")

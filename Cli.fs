@@ -237,8 +237,14 @@ let parseArgs (argv: string array) : ParsedInput =
           command = Command.Usage(Some ex.Message) }
 
 let printUsage (error: string option) =
-    match error with
-    | Some message -> eprintfn "%s" message
-    | None -> ()
+    let isFullUsage (message: string) =
+        message.TrimStart().StartsWith("USAGE:", StringComparison.OrdinalIgnoreCase)
 
-    printfn "%s" (parser.PrintUsage())
+    match error with
+    | Some message when isFullUsage message ->
+        printfn "%s" message
+    | Some message ->
+        eprintfn "%s" message
+        printfn "%s" (parser.PrintUsage())
+    | None ->
+        printfn "%s" (parser.PrintUsage())

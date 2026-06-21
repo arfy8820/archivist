@@ -98,7 +98,7 @@ let private parseConfig (json: string) =
         |> Option.defaultValue defaults.defaultPodcastTemplate
       targets = targets
       ytDlpOptions = tryGetJson [ "yt_dlp"; "yt_dlp_opts"; "ytDlp" ] root
-      podcastDlOptions = tryGetJson [ "podcast-dl"; "podcastDL"; "podcast_dl_opts" ] root }
+      podcastDlOptions = tryGetJson [ "podcast_dl"; "podcast-dl"; "podcastDL"; "podcast_dl_opts"; "podcast_dl_options" ] root }
 
 
 let loadFrom (path: string) : Result<Config, string> =
