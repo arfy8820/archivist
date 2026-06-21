@@ -2,141 +2,146 @@
 
 ## Project
 
-Archivist is an F# media archiving tool.
+Archivist is an F#/.NET media archiving CLI.
 
-It currently focuses on command-line workflows using `yt-dlp`, with manual `podcast-dl` integration being developed. The long-term direction is to expose the same core archiving engine through both a CLI and a GUI application.
+The current repo is a single executable project, not yet a multi-project `src/`/`tests/` solution. It uses `yt-dlp` for YouTube-style sources and `deno x podcast-dl` for podcast feeds.
 
-## Important design rule
-
-Keep the core logic independent from the user interface.
-
-Do not put business logic directly in CLI command handlers. Command handlers should parse input, call application services, and render results.
-
-## Preferred architecture
+## Current Files
 
 ```text
-src/
-    Archivist.Core/
-        Domain types
-        Template resolution
-        Sync planning
-        Validation
-        Pure logic
-
-    Archivist.Application/
-        Use cases
-        Target management
-        Sync orchestration
-        Result shaping
-
-    Archivist.Infrastructure/
-        yt-dlp integration
-        podcast-dl integration
-        File system
-        Process runner
-        Config persistence
-
-    Archivist.Cli/
-        Command-line parser
-        Human-readable output
-        JSON output
-
-tests/
-    Archivist.Tests/
+Domain.fs         Domain records, command model, source type parsing/inference
+Paths.fs          Config/media/log/archive paths
+ConfigStore.fs    JSON config load/save and legacy config parsing
+ProcessRunner.fs  External process execution
+YtDlp.fs          yt-dlp probe and sync arguments
+PodcastDl.fs      podcast-dl probe and sync arguments
+Cli.fs            Argu parser
+Program.fs        Command handlers, prompts, orchestration, rendering
 ```
 
-This structure can be adjusted to match the existing repository, but preserve the separation of concerns.
+Compile order is controlled explicitly in `archivist.fsproj`. Keep that order in mind when adding modules.
 
-## Coding style
+## Important Design Rule
+
+Keep core behavior independent from the user interface where practical.
+
+`Program.fs` currently contains orchestration and console rendering because the CLI is still compact. Avoid putting new business rules directly into parser cases or print-only code paths. Prefer small functions or modules that can later move into application/core layers.
+
+## Coding Style
 
 * Prefer clear F# domain types.
 * Prefer small modules with focused responsibilities.
 * Prefer immutable data.
-* Prefer `Result<'T, 'Error>` for recoverable failures.
+* Prefer `Result<'T, string>` or a specific error type for recoverable failures.
 * Avoid throwing exceptions for expected user/configuration errors.
 * Avoid adding heavy dependencies unless justified.
-* Keep process execution wrapped behind interfaces or small adapter modules.
+* Keep process execution behind `ProcessRunner` or similarly small adapter modules.
 * Keep file system access out of pure domain logic.
+* Preserve legacy config parsing where practical.
 
-## Domain modelling preferences
+## CLI Behavior To Preserve
 
-Use explicit types for important concepts.
+Implemented commands:
 
-Good:
-
-```fsharp
-type TargetId = TargetId of string
-type SourceUrl = SourceUrl of string
-type TemplateName = TemplateName of string
+```text
+list
+config show [property]
+config set <property> [value]
+probe <name>
+sync [--all|name]
+add [--url URL] [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast]
+remove <name> [--delete-archive]
 ```
 
-Avoid passing raw strings everywhere once a concept is important.
+Implemented global options:
 
-## Sync behaviour
+```text
+--config-file, -c
+--json, -j
+--quiet
+--version, -v
+```
+
+`sync` with no target means all targets. `add` may prompt for URL, output template, and label when options are omitted.
+
+## Config Compatibility
+
+Current config fields:
+
+```text
+youtube_dir
+podcast_dir
+default_youtube_template
+default_podcast_template
+targets
+yt_dlp_options
+podcast_dl_options
+```
+
+Legacy fields such as `base_dir`, `default_output_template`, `entries`, `sourceType`, and `outputTemplate` are still parsed. Do not break that compatibility casually.
+
+`yt_dlp_options` and `podcast_dl_options` are currently persisted but not applied to downloader arguments.
+
+## External Tools
+
+Archivist may call:
+
+* `yt-dlp`
+* `deno x podcast-dl`
+
+Do not scatter raw process calls throughout the codebase. Use `ProcessRunner.run` or a focused wrapper module.
+
+Log external tool commands clearly, but avoid leaking credentials or private tokens if authenticated URLs or headers are later supported.
+
+## Sync Behavior
 
 Sync should be predictable and safe.
 
-* Do not silently rewrite existing archive metadata.
 * Do not delete downloaded media unless explicitly requested.
-* Prefer dry-run support for dangerous or large operations.
-* Log external tool commands clearly, but avoid leaking credentials or private tokens.
-* Keep target IDs stable.
-* Preserve backward compatibility for existing config files where practical.
+* Do not silently rewrite unrelated config fields.
+* Keep target names stable.
+* Preserve archive files unless the user passes `remove --delete-archive`.
+* Keep YouTube and podcast template behavior separate.
 
-## External tools
+Current archive paths:
 
-Archivist may call external tools such as:
+```text
+YouTube: <youtube_dir>/<label>/.download-archive.txt
+Podcast: <podcast_dir>/{{podcast_title}}/archive.json
+```
 
-* `yt-dlp`
-* `podcast-dl`
-* `ffmpeg`
+## Podcast Support
 
-External process execution should be wrapped so it can be tested.
-
-Do not scatter raw process calls throughout the codebase.
-
-## Podcast support
-
-Podcast support is being integrated manually as a learning exercise.
+Podcast support is first-class but currently delegates identity/archive behavior to podcast-dl.
 
 When adding podcast features:
 
-* Treat podcast feeds as first-class targets.
-* Prefer stable episode identity using GUID when available.
+* Keep podcast naming templates separate from yt-dlp templates.
+* Avoid assuming every episode has a clean title, date, duration, season, or episode number.
+* Prefer stable episode identity using GUID if Archivist later owns podcast state.
 * Fall back carefully to enclosure URL or another stable value.
-* Keep podcast naming templates separate from YouTube assumptions.
-* Avoid assuming every episode has a clean title, date, duration, or season/episode number.
 
-## GUI future
+## Future Architecture
 
-Design with a future GUI in mind.
+The desired future split is still:
 
-The GUI will need:
+```text
+Archivist.Core
+Archivist.Application
+Archivist.Infrastructure
+Archivist.Cli
+```
 
-* A way to list targets.
-* A way to inspect planned downloads.
-* Progress reporting.
-* Cancellation.
-* Structured errors.
-* Machine-readable sync results.
+Do not force that split prematurely. When the code grows enough to justify it, move behavior along the boundaries described in `docs/architecture.md`.
 
-Therefore, avoid printing directly from deep application logic. Return structured results and let the CLI render them.
+## Testing Expectations
 
-## Testing expectations
+There is no test project yet. When adding tests, start with pure or near-pure behavior:
 
-Add tests for:
-
-* Template resolution.
-* Config parsing.
+* Config parsing and legacy compatibility.
+* Source type parsing and inference.
 * Target validation.
-* Sync planning.
-* Podcast episode identity selection.
+* Template/argument construction.
 * Command argument parsing where useful.
 
-Prefer tests around pure functions first.
-
-## Accessibility
-
-The eventual GUI should be screen-reader friendly.
-
-Prefer native controls where possible. Avoid custom UI widgets unless they expose proper accessibility information.
+Avoid tests that require real network downloads unless they are explicitly integration tests.

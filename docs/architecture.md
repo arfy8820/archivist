@@ -1,233 +1,236 @@
 # Architecture Notes
 
-## Overview
+## Current Shape
 
-Archivist is built around a simple idea:
+Archivist is currently one F# executable project targeting `net10.0`.
 
-> Define archive targets, resolve their configuration, ask an external downloader for media, then store the result in a predictable layout without duplicating previous downloads.
-
-The project should remain usable as a CLI while being structured so a GUI can later sit on top of the same core logic.
-
-## Layers
-
-### Core
-
-The Core layer should contain pure or mostly pure logic.
-
-Responsibilities:
-
-* Domain types.
-* Target definitions.
-* Template definitions.
-* Template resolution.
-* Sync planning.
-* Validation.
-* Error types.
-
-The Core layer should not know about Spectre.Console, Argu, System.CommandLine, Avalonia, WinUI, WPF, yt-dlp process flags, or podcast-dl process flags.
-
-### Application
-
-The Application layer coordinates use cases.
-
-Responsibilities:
-
-* Load configuration.
-* Resolve targets.
-* Build sync plans.
-* Call downloader abstractions.
-* Return structured results.
-* Coordinate dry runs and real runs.
-
-### Infrastructure
-
-The Infrastructure layer talks to the outside world.
-
-Responsibilities:
-
-* Running `yt-dlp`.
-* Running `podcast-dl`.
-* Running `ffmpeg`, if needed.
-* Reading/writing config files.
-* Reading/writing archive state.
-* File system operations.
-* Logging adapters.
-
-### CLI
-
-The CLI layer should be thin.
-
-Responsibilities:
-
-* Parse commands.
-* Call Application services.
-* Print human-readable output.
-* Print JSON output when requested.
-* Return useful exit codes.
-
-### GUI, future
-
-The GUI should call the same Application layer as the CLI.
-
-It should not shell out independently or duplicate sync logic.
-
-## Suggested data flow
+The implementation is intentionally small and module-oriented rather than split into multiple projects:
 
 ```text
-CLI command
-    -> Application use case
-        -> Load config
-        -> Resolve target/template
-        -> Build sync plan
-        -> Run downloader adapter
-        -> Update archive state
-        -> Return SyncResult
-    -> CLI renderer
+archivist.fsproj
+Domain.fs
+Paths.fs
+ConfigStore.fs
+ProcessRunner.fs
+YtDlp.fs
+PodcastDl.fs
+Cli.fs
+Program.fs
 ```
 
-Future GUI flow:
+The project uses Argu for CLI parsing and shells out to external download tools. There are no dedicated test projects yet.
+
+## Implemented Data Flow
 
 ```text
-GUI action
-    -> Application use case
-        -> Same core sync logic
-    -> GUI view model
+CLI argv
+    -> Cli.parseArgs
+    -> Program.runMain
+        -> resolve config path
+        -> ConfigStore.loadFrom
+        -> command handler
+            -> optional config write
+            -> optional external process call
+            -> optional process log write
+    -> exit code
 ```
 
-## Target model
+`Program.fs` is currently the orchestration layer. It still contains user prompts, command handling, sync orchestration, and console rendering. That is acceptable for the current compact CLI, but new domain behavior should be kept out of the parser and isolated in focused modules where practical.
 
-A target represents something Archivist can sync.
+## Current Modules
 
-Possible fields:
+### Domain
 
-```fsharp
-type SourceKind =
-    | YouTube
-    | Podcast
-    | UrlList
+`Domain.fs` defines:
 
-type Target =
-    { Id: TargetId
-      Name: string
-      SourceKind: SourceKind
-      Url: SourceUrl
-      Template: TemplateName option
-      OutputRoot: string option
-      Enabled: bool }
-```
+* `SourceType` with `YouTube` and `Podcast`.
+* `Target`, including `name`, `url`, `mode`, `subdir`, and `output_template`.
+* `Config`, including YouTube and podcast roots, default templates, targets, and optional JSON option blocks.
+* CLI command and parsed input types.
+* Source type parsing and inference.
 
-## Template model
+Source inference is intentionally simple:
 
-Templates should describe output structure without hard-coding source-specific assumptions.
+* YouTube mode is selected for YouTube, youtu.be, SoundCloud, and unknown URLs.
+* Podcast mode is selected for feed/RSS/XML-looking URLs and a few known podcast hosts.
+* Explicit target mode wins over inference.
 
-Example concepts:
+### Paths
 
-```fsharp
-type Template =
-    { Name: TemplateName
-      DirectoryPattern: string
-      FileNamePattern: string
-      MetadataPattern: string option }
-```
-
-Possible placeholder values:
+`Paths.fs` owns default paths:
 
 ```text
-{target_id}
-{target_name}
-{source_kind}
-{channel}
-{playlist}
-{podcast}
-{episode_title}
-{upload_date}
-{published_date}
-{id}
-{extension}
+youtube_dir default: ~/Videos/YouTube
+podcast_dir default: ~/Music/Podcasts
+config dir default: ~/.config/archivist
+config file: <config dir>/config.json
+logs dir: <config dir>/logs
 ```
 
-YouTube and podcast sources will not provide identical metadata, so template resolution should handle missing values deliberately.
+`ARCHIVIST_CONFIG_DIR` overrides the config directory. The global `--config-file` CLI option overrides the config file path for a run.
 
-## Sync result model
+### Config Store
 
-A sync operation should return structured information.
+`ConfigStore.fs` loads and saves JSON config.
 
-```fsharp
-type DownloadStatus =
-    | Downloaded
-    | SkippedAlreadyArchived
-    | Failed
-    | Planned
+It accepts the current config shape:
 
-type SyncItemResult =
-    { Title: string option
-      SourceUrl: string
-      OutputPath: string option
-      Status: DownloadStatus
-      Message: string option }
-
-type SyncResult =
-    { TargetId: TargetId
-      StartedAt: DateTimeOffset
-      FinishedAt: DateTimeOffset option
-      Items: SyncItemResult list }
+```json
+{
+  "youtube_dir": "...",
+  "podcast_dir": "...",
+  "default_youtube_template": "...",
+  "default_podcast_template": "...",
+  "targets": [],
+  "yt_dlp_options": null,
+  "podcast_dl_options": null
+}
 ```
 
-This makes CLI output, JSON output, logging, and future GUI display much easier.
-
-## Error handling
-
-Prefer explicit errors for expected failures.
-
-Examples:
-
-```fsharp
-type ArchivistError =
-    | ConfigFileMissing of string
-    | InvalidTargetId of string
-    | UnknownTarget of string
-    | TemplateNotFound of string
-    | ExternalToolMissing of string
-    | ExternalToolFailed of tool:string * exitCode:int * stderr:string
-    | InvalidPodcastFeed of string
-```
-
-## Podcast design notes
-
-Podcast support should not be treated as “YouTube but with different URLs.”
-
-Important podcast-specific concerns:
-
-* Episodes may have GUIDs.
-* Episode titles may change.
-* Enclosure URLs may change.
-* Dates may be missing or inconsistent.
-* Feeds may include old episodes, bonus episodes, trailers, or duplicates.
-* Episode numbering is inconsistent across publishers.
-
-Episode identity preference:
+It also reads legacy fields such as:
 
 ```text
-1. GUID, if present and stable.
-2. Enclosure URL.
-3. Combination of title + published date + duration, as a last resort.
+base_dir
+baseDir
+default_output_template
+defaultOutputTemplate
+entries
+outputTemplate
+sourceType
 ```
 
-## Future GUI requirements to preserve now
+`yt_dlp_options` and `podcast_dl_options` are parsed and persisted as raw JSON, but are not yet applied by `YtDlp.fs` or `PodcastDl.fs`.
 
-To keep the GUI path open, the CLI implementation should avoid:
+### Process Runner
 
-* Deep logic that prints directly to the console.
-* Progress that is only available as text.
-* Errors that only exist as formatted strings.
-* Global mutable state.
-* Hard-coded config paths without override support.
+`ProcessRunner.fs` wraps external process execution and returns:
 
-Useful future-friendly features:
+```fsharp
+type ProcessResult =
+    { exitCode: int
+      stdout: string
+      stderr: string }
+```
 
-* Dry-run mode.
-* JSON output.
-* Progress events.
-* Cancellation token support.
-* Structured logs.
-* Clear separation between planning and execution.
+It redirects stdout and stderr, waits asynchronously, and does not currently support cancellation, streaming progress, or environment customization.
+
+### yt-dlp Integration
+
+`YtDlp.fs` provides:
+
+* Metadata probing with `yt-dlp --dump-json --skip-download --playlist-end 1 <url>`.
+* Label suggestions from channel handle, uploader id, channel, or uploader.
+* Sync arguments using `--download-archive`, `--paths`, and `-o`.
+
+The archive file for a YouTube target is:
+
+```text
+<youtube_dir>/<label>/.download-archive.txt
+```
+
+### podcast-dl Integration
+
+`PodcastDl.fs` runs podcast-dl through Deno:
+
+```text
+deno x podcast-dl ...
+```
+
+It provides:
+
+* Feed title probing with `deno x podcast-dl --info --url <url>`.
+* Sync arguments using `--out-dir`, `--episode-template`, `--archive`, `--include-meta`, and `--include-episode-meta`.
+
+Podcast output is rooted at:
+
+```text
+<podcast_dir>/{{podcast_title}}
+```
+
+The podcast archive template is:
+
+```text
+<podcast_dir>/{{podcast_title}}/archive.json
+```
+
+## CLI Behavior
+
+Implemented commands:
+
+```text
+list
+config show [property]
+config set <property> [value]
+probe <name>
+sync [--all|name]
+add [--url URL] [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast]
+remove <name> [--delete-archive]
+```
+
+Implemented global options:
+
+```text
+--config-file, -c
+--json, -j
+--quiet
+--version, -v
+```
+
+JSON output is implemented for `list`, `config show`, `probe`, and `version`. Sync still prints human-readable process status and writes process logs.
+
+## Error Handling
+
+Expected errors are mostly represented as `Result<_, string>` at module boundaries. Command handlers convert those results to messages and exit codes.
+
+Current exit code conventions:
+
+* `0` for success.
+* `1` for config, external process, or command execution failures.
+* `2` for usage errors.
+* Sync returns the last non-zero downloader exit code if any target fails.
+
+## Future Layering Direction
+
+The desired long-term shape remains:
+
+```text
+Archivist.Core
+    Domain model
+    Template resolution
+    Sync planning
+    Validation
+
+Archivist.Application
+    Use cases
+    Target management
+    Sync orchestration
+    Result shaping
+
+Archivist.Infrastructure
+    yt-dlp integration
+    podcast-dl integration
+    File system
+    Process runner
+    Config persistence
+
+Archivist.Cli
+    Command-line parser
+    Human-readable output
+    JSON output
+```
+
+That split should happen when the code size or test surface justifies it. Until then, prefer keeping modules focused and avoiding new dependencies or broad abstractions.
+
+## Future GUI Requirements To Preserve
+
+To keep a GUI path open, avoid adding behavior that depends on console output as the only state channel.
+
+Useful future work:
+
+* Structured sync result values.
+* Dry-run support.
+* Cancellation tokens for process execution.
+* Progress events or streaming process output.
+* Tests for config parsing, target validation, template resolution, and argument construction.
+* Applying `yt_dlp_options` and `podcast_dl_options` consistently.
+* Moving prompt/rendering code out of orchestration once application services exist.
