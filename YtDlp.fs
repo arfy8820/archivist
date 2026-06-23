@@ -45,7 +45,7 @@ let probe (url: string) : Task<ProbeOutcome> =
                 return ProbeFailed $"Failed to parse yt-dlp metadata: {ex.Message}"
     }
 
-let private pathCombineForTemplate left right =
+let private pathCombineForYoutube left right =
     if String.IsNullOrWhiteSpace left then right
     elif String.IsNullOrWhiteSpace right then left
     else Path.Combine(left, right)
@@ -53,10 +53,7 @@ let private pathCombineForTemplate left right =
 let private outputTemplate (config: Config) (target: Target) =
     match target.outputTemplate with
     | Some template when not (String.IsNullOrWhiteSpace template) -> template
-    | _ ->
-        target.subdir
-        |> Option.defaultValue ""
-        |> fun subdir -> pathCombineForTemplate subdir config.defaultYoutubeTemplate
+    | _ -> config.defaultYoutubeTemplate
 
 let buildSyncArgs (config: Config) (label: string) (target: Target) =
     let archivePath = youtubeArchiveFile config label
@@ -64,7 +61,9 @@ let buildSyncArgs (config: Config) (label: string) (target: Target) =
     [ "--download-archive"
       archivePath
       "--paths"
-      config.youtubeDir
+      target.subdir
+      |> Option.defaultValue ""
+        |> fun subdir -> pathCombineForYoutube config.youtubeDir subdir
       "-o"
       outputTemplate config target
       target.url ]
