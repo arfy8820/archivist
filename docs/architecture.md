@@ -91,7 +91,7 @@ struct ProcessResult {
 }
 ```
 
-It redirects stdout and stderr, waits synchronously, and does not currently support cancellation, streaming progress, or environment customization.
+Sync redirects stdout and stderr into the per-target log file as the subprocess runs, waits synchronously, and then reports the same end-of-run summary to the terminal. It does not currently support cancellation, terminal progress streaming, or environment customization.
 
 ## yt-dlp Integration
 
@@ -158,7 +158,7 @@ Implemented global options:
 --version, -v
 ```
 
-JSON output is implemented for `list`, `config show`, and `probe`. Sync still prints human-readable process status and writes process logs.
+JSON output is implemented for `list`, `config show`, and `probe`. Sync still prints human-readable process status and streams subprocess output to process logs.
 
 ## Error Handling
 

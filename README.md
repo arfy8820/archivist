@@ -178,6 +178,8 @@ Sync logs are written to:
 ~/.config/archivist/logs/sync-<label>-<timestamp>.log
 ```
 
+During sync, downloader stdout and stderr are streamed into the log file as the subprocess runs. The terminal still shows the per-target summary after the subprocess exits.
+
 ## F# vs Rust Approach
 
 The F# version used multiple small modules and immutable records to make the CLI flow explicit inside a .NET executable. JSON config came from `System.Text.Json`, CLI parsing came from Argu, and async process execution used .NET tasks.

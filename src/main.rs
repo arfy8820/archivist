@@ -6,9 +6,13 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
+use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
+use std::process::Stdio;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 const APP_NAME: &str = "archivist";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -563,16 +567,12 @@ fn handle_sync(cli: &Cli, config: &Config, args: SyncArgs) -> i32 {
         let command_line = format_command(executable, &command_args);
         println!("Syncing '{name}'...");
         log_info(cli.quiet, &format!("Running: {command_line}"));
-        let result = run_process(executable, &command_args);
         let log_path = sync_log_file(&name);
+        let result = run_process_with_log(executable, &command_args, &log_path, &command_line);
 
         match &result {
             Ok(result) => {
-                if let Err(error) = write_process_log(&log_path, &command_line, result) {
-                    eprintln!("Failed to write log '{}': {error}", log_path.display());
-                } else {
-                    log_info(cli.quiet, &format!("Wrote log to {}", log_path.display()));
-                }
+                log_info(cli.quiet, &format!("Wrote log to {}", log_path.display()));
                 print_sync_result(&name, result);
                 if result.exit_code != 0 {
                     final_code = result.exit_code;
@@ -939,6 +939,112 @@ fn run_process(executable: &str, args: &[String]) -> io::Result<ProcessResult> {
     })
 }
 
+fn run_process_with_log(
+    executable: &str,
+    args: &[String],
+    log_path: &Path,
+    command_line: &str,
+) -> io::Result<ProcessResult> {
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut file = File::create(log_path)?;
+    writeln!(file, "Timestamp: {}", Local::now().to_rfc3339())?;
+    writeln!(file, "Command: {command_line}")?;
+    writeln!(file)?;
+    writeln!(
+        file,
+        "Output is streamed while the subprocess runs. Chunks are prefixed with their source stream."
+    )?;
+    writeln!(file)?;
+    file.flush()?;
+
+    let file = Arc::new(Mutex::new(file));
+    let mut child = ProcessCommand::new(executable)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .map(|stdout| stream_process_output("STDOUT", stdout, Arc::clone(&file)));
+    let stderr = child
+        .stderr
+        .take()
+        .map(|stderr| stream_process_output("STDERR", stderr, Arc::clone(&file)));
+
+    let status = child.wait()?;
+    let stdout = join_stream_output(stdout)?;
+    let stderr = join_stream_output(stderr)?;
+    let exit_code = status.code().unwrap_or(1);
+
+    {
+        let mut file = lock_log_file(&file)?;
+        writeln!(file)?;
+        writeln!(file, "ExitCode: {exit_code}")?;
+        file.flush()?;
+    }
+
+    Ok(ProcessResult {
+        exit_code,
+        stdout,
+        stderr,
+    })
+}
+
+fn stream_process_output<R>(
+    label: &'static str,
+    stream: R,
+    file: Arc<Mutex<File>>,
+) -> thread::JoinHandle<io::Result<String>>
+where
+    R: io::Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let mut collected = Vec::new();
+        let mut reader = stream;
+        let mut buffer = [0_u8; 8192];
+
+        loop {
+            let bytes_read = reader.read(&mut buffer)?;
+            if bytes_read == 0 {
+                break;
+            }
+
+            let chunk = &buffer[..bytes_read];
+            collected.extend_from_slice(chunk);
+            let mut file = lock_log_file(&file)?;
+            write!(file, "[{label}] ")?;
+            file.write_all(chunk)?;
+            if !chunk.ends_with(b"\n") && !chunk.ends_with(b"\r") {
+                writeln!(file)?;
+            }
+            file.flush()?;
+        }
+
+        Ok(String::from_utf8_lossy(&collected).into_owned())
+    })
+}
+
+fn join_stream_output(
+    handle: Option<thread::JoinHandle<io::Result<String>>>,
+) -> io::Result<String> {
+    match handle {
+        Some(handle) => handle
+            .join()
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "stream reader thread panicked"))?,
+        None => Ok(String::new()),
+    }
+}
+
+fn lock_log_file(file: &Arc<Mutex<File>>) -> io::Result<std::sync::MutexGuard<'_, File>> {
+    file.lock()
+        .map_err(|_| io::Error::new(io::ErrorKind::Other, "log file lock was poisoned"))
+}
+
 fn ensure_sync_directories(config: &Config) -> Result<(), String> {
     fs::create_dir_all(&config.youtube_dir).map_err(|error| {
         format!(
@@ -968,20 +1074,6 @@ fn print_sync_result(label: &str, result: &ProcessResult) {
     if result.exit_code != 0 && !result.stderr.trim().is_empty() {
         eprintln!("{}", result.stderr);
     }
-}
-
-fn write_process_log(path: &Path, command_line: &str, result: &ProcessResult) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let content = format!(
-        "Timestamp: {}\nCommand: {command_line}\nExitCode: {}\n\nSTDOUT:\n{}\n\nSTDERR:\n{}",
-        Local::now().to_rfc3339(),
-        result.exit_code,
-        result.stdout,
-        result.stderr
-    );
-    fs::write(path, content)
 }
 
 fn print_target(name: &str, target: &Target) {
@@ -1556,5 +1648,36 @@ fn format_command(executable: &str, args: &[String]) -> String {
 fn log_info(quiet: bool, message: &str) {
     if !quiet {
         println!("{message}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_process_with_log_streams_stdout_and_stderr_to_log() {
+        let log_path = env::temp_dir().join(format!(
+            "archivist-stream-test-{}-{}.log",
+            std::process::id(),
+            Local::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let args = vec![
+            "-c".to_string(),
+            "printf 'out1\n'; printf 'err1\n' >&2".to_string(),
+        ];
+
+        let result =
+            run_process_with_log("sh", &args, &log_path, "sh -c test").expect("process should run");
+        let log = fs::read_to_string(&log_path).expect("log should be readable");
+        let _ = fs::remove_file(&log_path);
+
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.stdout, "out1\n");
+        assert_eq!(result.stderr, "err1\n");
+        assert!(log.contains("Command: sh -c test"));
+        assert!(log.contains("[STDOUT] out1"));
+        assert!(log.contains("[STDERR] err1"));
+        assert!(log.contains("ExitCode: 0"));
     }
 }

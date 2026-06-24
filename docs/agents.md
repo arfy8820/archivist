@@ -84,6 +84,8 @@ Do not scatter raw process calls throughout the codebase. Use or extend the exis
 
 Log external tool commands clearly, but avoid leaking credentials or private tokens if authenticated URLs or headers are later supported.
 
+During sync, subprocess stdout and stderr should stream into the per-target log file while the subprocess runs. Keep terminal output focused on command start and end-of-run summaries unless a later feature explicitly adds live terminal progress.
+
 ## Sync Behavior
 
 Sync should be predictable and safe.
