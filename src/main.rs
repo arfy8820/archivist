@@ -1449,7 +1449,7 @@ fn logs_directory() -> PathBuf {
 }
 
 fn user_home_directory() -> PathBuf {
-    env::var_os("HOME")
+    env::home_dir()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
 }
