@@ -2,42 +2,32 @@
 
 ## Project
 
-Archivist is an F#/.NET media archiving CLI.
+Archivist is a Rust media archiving CLI.
 
-The current repo is a single executable project, not yet a multi-project `src/`/`tests/` solution. It uses `yt-dlp` for YouTube-style sources and `deno x podcast-dl` for podcast feeds.
+The current repo is a single Cargo binary crate. It uses `yt-dlp` for YouTube-style sources and `deno x podcast-dl` for podcast feeds.
 
 ## Current Files
 
 ```text
-Domain.fs         Domain records, command model, source type parsing/inference
-Paths.fs          Config/media/log/archive paths
-ConfigStore.fs    JSON config load/save and legacy config parsing
-ProcessRunner.fs  External process execution
-YtDlp.fs          yt-dlp probe and sync arguments
-PodcastDl.fs      podcast-dl probe and sync arguments
-Cli.fs            Argu parser
-Program.fs        Command handlers, prompts, orchestration, rendering
+Cargo.toml      Package metadata and dependencies
+src/main.rs     CLI parser, domain model, TOML config, process calls, prompts, rendering
 ```
-
-Compile order is controlled explicitly in `archivist.fsproj`. Keep that order in mind when adding modules.
 
 ## Important Design Rule
 
 Keep core behavior independent from the user interface where practical.
 
-`Program.fs` currently contains orchestration and console rendering because the CLI is still compact. Avoid putting new business rules directly into parser cases or print-only code paths. Prefer small functions or modules that can later move into application/core layers.
+`src/main.rs` currently contains orchestration and console rendering because the CLI is still compact. Avoid putting new business rules directly into parser cases or print-only code paths. Prefer small functions that can later move into application/core modules.
 
 ## Coding Style
 
-* Prefer clear F# domain types.
-* Prefer small modules with focused responsibilities.
-* Prefer immutable data.
-* Prefer `Result<'T, string>` or a specific error type for recoverable failures.
-* Avoid throwing exceptions for expected user/configuration errors.
+* Prefer clear Rust structs and enums.
+* Prefer `Result<T, String>` or specific error types for recoverable failures.
+* Avoid panics for expected user/configuration errors.
 * Avoid adding heavy dependencies unless justified.
-* Keep process execution behind `ProcessRunner` or similarly small adapter modules.
+* Keep process execution behind a focused helper.
 * Keep file system access out of pure domain logic.
-* Preserve legacy config parsing where practical.
+* Use TOML for persisted config.
 
 ## CLI Behavior To Preserve
 
@@ -47,9 +37,10 @@ Implemented commands:
 list
 config show [property]
 config set <property> [value]
+import-json <input> [--output PATH] [--force]
 probe <name>
 sync [--all|name]
-add [--url URL] [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir]
+add [--url URL] [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir] [--include-all]
 remove <name> [--delete-archive]
 ```
 
@@ -62,11 +53,13 @@ Implemented global options:
 --version, -v
 ```
 
-`sync` with no target means all targets. `add` may prompt for URL, output template, label, and subdirectory behavior when options are omitted. `--subdir` stores the target under a label-named subdirectory.
+`sync` with no target means all targets. `add` may prompt for URL, output template, label, playlist expansion, and subdirectory behavior when options are omitted. `--subdir` stores the target under a label-named subdirectory. `--include-all` stores the URL without `/playlists` for matching YouTube playlist collection URLs.
+
+`import-json` converts the old Archivist JSON config to the current TOML shape. It supports the recent `targets` array shape and the legacy `entries` object shape.
 
 ## Config Compatibility
 
-Current config fields:
+Current TOML config fields:
 
 ```text
 youtube_dir
@@ -78,8 +71,6 @@ yt_dlp_options
 podcast_dl_options
 ```
 
-Legacy fields such as `base_dir`, `default_output_template`, `entries`, `sourceType`, and `outputTemplate` are still parsed. Do not break that compatibility casually.
-
 `yt_dlp_options` and `podcast_dl_options` are currently persisted but not applied to downloader arguments.
 
 ## External Tools
@@ -89,7 +80,7 @@ Archivist may call:
 * `yt-dlp`
 * `deno x podcast-dl`
 
-Do not scatter raw process calls throughout the codebase. Use `ProcessRunner.run` or a focused wrapper module.
+Do not scatter raw process calls throughout the codebase. Use or extend the existing process helper.
 
 Log external tool commands clearly, but avoid leaking credentials or private tokens if authenticated URLs or headers are later supported.
 
@@ -123,22 +114,25 @@ When adding podcast features:
 
 ## Future Architecture
 
-The desired future split is still:
+The likely future split is:
 
 ```text
-Archivist.Core
-Archivist.Application
-Archivist.Infrastructure
-Archivist.Cli
+src/domain.rs
+src/config.rs
+src/downloaders/ytdlp.rs
+src/downloaders/podcast_dl.rs
+src/process.rs
+src/cli.rs
+src/main.rs
 ```
 
 Do not force that split prematurely. When the code grows enough to justify it, move behavior along the boundaries described in `docs/architecture.md`.
 
 ## Testing Expectations
 
-There is no test project yet. When adding tests, start with pure or near-pure behavior:
+There is no test module yet. When adding tests, start with pure or near-pure behavior:
 
-* Config parsing and legacy compatibility.
+* Config parsing.
 * Source type parsing and inference.
 * Target validation.
 * Template/argument construction.

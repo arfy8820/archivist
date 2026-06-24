@@ -7,3 +7,4 @@ obj/
 .smoke-*/
 docs/update_notes.txt
 resume
+target/

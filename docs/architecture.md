@@ -2,32 +2,25 @@
 
 ## Current Shape
 
-Archivist is currently one F# executable project targeting `net10.0`.
+Archivist is currently one Rust binary crate.
 
-The implementation is intentionally small and module-oriented rather than split into multiple projects:
+The implementation is intentionally compact:
 
 ```text
-archivist.fsproj
-Domain.fs
-Paths.fs
-ConfigStore.fs
-ProcessRunner.fs
-YtDlp.fs
-PodcastDl.fs
-Cli.fs
-Program.fs
+Cargo.toml
+src/main.rs
 ```
 
-The project uses Argu for CLI parsing and shells out to external download tools. There are no dedicated test projects yet.
+The project uses `clap` for CLI parsing, `serde` for serialization, `toml` for config persistence, `serde_json` for JSON output and yt-dlp probe parsing, and `std::process::Command` for external tools. There are no dedicated test modules yet.
 
 ## Implemented Data Flow
 
 ```text
 CLI argv
-    -> Cli.parseArgs
-    -> Program.runMain
+    -> clap parser
+    -> run
         -> resolve config path
-        -> ConfigStore.loadFrom
+        -> load_config
         -> command handler
             -> optional config write
             -> optional external process call
@@ -35,19 +28,16 @@ CLI argv
     -> exit code
 ```
 
-`Program.fs` is currently the orchestration layer. It still contains user prompts, command handling, sync orchestration, and console rendering. That is acceptable for the current compact CLI, but new domain behavior should be kept out of the parser and isolated in focused modules where practical.
+`src/main.rs` currently contains domain types, command handling, config persistence, process execution, prompts, and console rendering. That is acceptable for the current compact CLI, but new domain behavior should be isolated in focused functions so it can later move into modules.
 
-## Current Modules
+## Domain Model
 
-### Domain
-
-`Domain.fs` defines:
+The Rust domain model defines:
 
 * `SourceType` with `YouTube` and `Podcast`.
 * `Target`, including `name`, `url`, optional `urls`, `mode`, `subdir`, and `output_template`.
-* `Config`, including YouTube and podcast roots, default templates, targets, and optional JSON option blocks.
-* CLI command and parsed input types.
-* Source type parsing and inference.
+* `Config`, including YouTube and podcast roots, default templates, targets, and optional TOML option blocks.
+* `ProcessResult` for external process outcomes.
 
 Source inference is intentionally simple:
 
@@ -55,68 +45,57 @@ Source inference is intentionally simple:
 * Podcast mode is selected for feed/RSS/XML-looking URLs and a few known podcast hosts.
 * Explicit target mode wins over inference.
 
-### Paths
+## Paths
 
-`Paths.fs` owns default paths:
+Default paths:
 
 ```text
 youtube_dir default: ~/Videos/YouTube
 podcast_dir default: ~/Music/Podcasts
 config dir default: ~/.config/archivist
-config file: <config dir>/config.json
+config file: <config dir>/config.toml
 logs dir: <config dir>/logs
 ```
 
 `ARCHIVIST_CONFIG_DIR` overrides the config directory. The global `--config-file` CLI option overrides the config file path for a run.
 
-### Config Store
+## Config Store
 
-`ConfigStore.fs` loads and saves JSON config.
+Config is loaded and saved as TOML.
 
-It accepts the current config shape:
+Current config fields:
 
-```json
-{
-  "youtube_dir": "...",
-  "podcast_dir": "...",
-  "default_youtube_template": "...",
-  "default_podcast_template": "...",
-  "targets": [],
-  "yt_dlp_options": null,
-  "podcast_dl_options": null
+```toml
+youtube_dir = "..."
+podcast_dir = "..."
+default_youtube_template = "..."
+default_podcast_template = "..."
+
+[[targets]]
+name = "..."
+url = "..."
+mode = "youtube"
+```
+
+`yt_dlp_options` and `podcast_dl_options` are parsed and persisted as TOML values, but are not yet applied to generated downloader arguments.
+
+## Process Runner
+
+External process execution returns:
+
+```rust
+struct ProcessResult {
+    exit_code: i32,
+    stdout: String,
+    stderr: String,
 }
 ```
 
-It also reads legacy fields such as:
+It redirects stdout and stderr, waits synchronously, and does not currently support cancellation, streaming progress, or environment customization.
 
-```text
-base_dir
-baseDir
-default_output_template
-defaultOutputTemplate
-entries
-outputTemplate
-sourceType
-```
+## yt-dlp Integration
 
-`yt_dlp_options` and `podcast_dl_options` are parsed and persisted as raw JSON, but are not yet applied by `YtDlp.fs` or `PodcastDl.fs`.
-
-### Process Runner
-
-`ProcessRunner.fs` wraps external process execution and returns:
-
-```fsharp
-type ProcessResult =
-    { exitCode: int
-      stdout: string
-      stderr: string }
-```
-
-It redirects stdout and stderr, waits asynchronously, and does not currently support cancellation, streaming progress, or environment customization.
-
-### yt-dlp Integration
-
-`YtDlp.fs` provides:
+The yt-dlp path provides:
 
 * Metadata probing with `yt-dlp --dump-json --skip-download --playlist-end 1 <url>`.
 * Label suggestions from channel handle, uploader id, channel, or uploader.
@@ -128,9 +107,11 @@ The archive file for a YouTube target is:
 <youtube_dir>/<label>/.download-archive.txt
 ```
 
-### podcast-dl Integration
+If a YouTube add URL ends in `/playlists`, Archivist can store both the original URL and the URL without `/playlists` under the same target. Sync passes all stored URLs to one yt-dlp invocation sharing the same archive file.
 
-`PodcastDl.fs` runs podcast-dl through Deno:
+## podcast-dl Integration
+
+Podcast support runs podcast-dl through Deno:
 
 ```text
 deno x podcast-dl ...
@@ -161,9 +142,10 @@ Implemented commands:
 list
 config show [property]
 config set <property> [value]
+import-json <input> [--output PATH] [--force]
 probe <name>
 sync [--all|name]
-add [--url URL] [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir]
+add [--url URL] [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir] [--include-all]
 remove <name> [--delete-archive]
 ```
 
@@ -176,11 +158,11 @@ Implemented global options:
 --version, -v
 ```
 
-JSON output is implemented for `list`, `config show`, `probe`, and `version`. Sync still prints human-readable process status and writes process logs.
+JSON output is implemented for `list`, `config show`, and `probe`. Sync still prints human-readable process status and writes process logs.
 
 ## Error Handling
 
-Expected errors are mostly represented as `Result<_, string>` at module boundaries. Command handlers convert those results to messages and exit codes.
+Expected errors are mostly represented as `Result<_, String>` at function boundaries. Command handlers convert those results to messages and exit codes.
 
 Current exit code conventions:
 
@@ -189,37 +171,27 @@ Current exit code conventions:
 * `2` for usage errors.
 * Sync returns the last non-zero downloader exit code if any target fails.
 
+## F# vs Rust Notes
+
+The old F# version leaned on small modules, discriminated unions, records, Argu, `System.Text.Json`, and .NET tasks. That made command flow concise and naturally expression-oriented.
+
+The Rust version uses explicit structs/enums, `clap` derive macros, `serde`, TOML persistence, and ownership-aware data flow. The tradeoff is more boilerplate, but the compiled binary has no .NET runtime dependency and config serialization is strongly tied to the Rust data model.
+
 ## Future Layering Direction
 
 The desired long-term shape remains:
 
 ```text
-Archivist.Core
-    Domain model
-    Template resolution
-    Sync planning
-    Validation
-
-Archivist.Application
-    Use cases
-    Target management
-    Sync orchestration
-    Result shaping
-
-Archivist.Infrastructure
-    yt-dlp integration
-    podcast-dl integration
-    File system
-    Process runner
-    Config persistence
-
-Archivist.Cli
-    Command-line parser
-    Human-readable output
-    JSON output
+src/domain.rs
+src/config.rs
+src/downloaders/ytdlp.rs
+src/downloaders/podcast_dl.rs
+src/process.rs
+src/cli.rs
+src/main.rs
 ```
 
-That split should happen when the code size or test surface justifies it. Until then, prefer keeping modules focused and avoiding new dependencies or broad abstractions.
+That split should happen when the code size or test surface justifies it. Until then, prefer keeping functions focused and avoiding broad abstractions.
 
 ## Future GUI Requirements To Preserve
 
@@ -229,8 +201,7 @@ Useful future work:
 
 * Structured sync result values.
 * Dry-run support.
-* Cancellation tokens for process execution.
-* Progress events or streaming process output.
+* Cancellation and progress events for process execution.
 * Tests for config parsing, target validation, template resolution, and argument construction.
 * Applying `yt_dlp_options` and `podcast_dl_options` consistently.
 * Moving prompt/rendering code out of orchestration once application services exist.
