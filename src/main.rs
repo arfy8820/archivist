@@ -333,6 +333,7 @@ fn run(cli: Cli) -> i32 {
 
     let Some(command) = cli.command.clone() else {
         println!("archivist version {VERSION}");
+        println!("use -h or --help for usage information.");
         return 0;
     };
 
@@ -1294,11 +1295,7 @@ fn json_get_string_list(root: &JsonValue, names: &[&str]) -> Option<Vec<String>>
         })
         .unwrap_or_default();
 
-    if urls.is_empty() {
-        None
-    } else {
-        Some(urls)
-    }
+    if urls.is_empty() { None } else { Some(urls) }
 }
 
 fn json_get_subdir(root: &JsonValue) -> bool {
