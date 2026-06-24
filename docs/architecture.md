@@ -35,7 +35,7 @@ CLI argv
 The Rust domain model defines:
 
 * `SourceType` with `YouTube` and `Podcast`.
-* `Target`, including `name`, `url`, optional `urls`, `mode`, `subdir`, and `output_template`.
+* `Target`, keyed by target name, including `url`, optional `urls`, `mode`, boolean `subdir`, and `output_template`.
 * `Config`, including YouTube and podcast roots, default templates, targets, and optional TOML option blocks.
 * `ProcessResult` for external process outcomes.
 
@@ -71,10 +71,10 @@ podcast_dir = "..."
 default_youtube_template = "..."
 default_podcast_template = "..."
 
-[[targets]]
-name = "..."
+[targets.example]
 url = "..."
 mode = "youtube"
+subdir = true
 ```
 
 `yt_dlp_options` and `podcast_dl_options` are parsed and persisted as TOML values, but are not yet applied to generated downloader arguments.
@@ -107,7 +107,7 @@ The archive file for a YouTube target is:
 <youtube_dir>/<label>/.download-archive.txt
 ```
 
-If a YouTube add URL ends in `/playlists`, Archivist can store both the original URL and the URL without `/playlists` under the same target. Sync passes all stored URLs to one yt-dlp invocation sharing the same archive file.
+If a YouTube add URL ends in `/playlists`, Archivist can store both the original URL and the URL without `/playlists` under the same target key. Sync passes all stored URLs to one yt-dlp invocation sharing the same archive file.
 
 ## podcast-dl Integration
 

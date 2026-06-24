@@ -53,24 +53,21 @@ podcast_dir = "/Users/me/Music/Podcasts"
 default_youtube_template = "%(playlist)s/%(upload_date>%Y-%m-%d)s - %(title)s.%(ext)s"
 default_podcast_template = "{{release_year}}-{{release_month}}-{{release_day}} - {{title}}"
 
-[[targets]]
-name = "youtube-linux"
+[targets.youtube-linux]
 url = "https://www.youtube.com/example"
 mode = "youtube"
-subdir = "youtube-linux"
+subdir = true
 
-[[targets]]
-name = "my-podcast"
+[targets.my-podcast]
 url = "https://example.com/feed.xml"
 mode = "podcast"
-subdir = "my-podcast"
+subdir = true
 ```
 
 For a YouTube channel playlists URL, a target may store multiple sync URLs:
 
 ```toml
-[[targets]]
-name = "example"
+[targets.example]
 url = "https://www.youtube.com/@example/playlists"
 urls = [
   "https://www.youtube.com/@example/playlists",
@@ -165,7 +162,7 @@ YouTube sync runs:
 yt-dlp --download-archive <youtube_dir>/<label>/.download-archive.txt --paths <youtube_dir> -o <template> <url> [<url>...]
 ```
 
-If a target has a `subdir`, YouTube `--paths` points at `<youtube_dir>/<subdir>`. If `subdir` is omitted, `--paths` points at `<youtube_dir>`.
+If a target has `subdir = true`, YouTube `--paths` points at `<youtube_dir>/<target key>`. If `subdir` is false or omitted, `--paths` points at `<youtube_dir>`.
 
 Podcast sync runs:
 

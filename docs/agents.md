@@ -53,9 +53,9 @@ Implemented global options:
 --version, -v
 ```
 
-`sync` with no target means all targets. `add` may prompt for URL, output template, label, playlist expansion, and subdirectory behavior when options are omitted. `--subdir` stores the target under a label-named subdirectory. `--include-all` stores the URL without `/playlists` for matching YouTube playlist collection URLs.
+`sync` with no target means all targets. `add` may prompt for URL, output template, label, playlist expansion, and subdirectory behavior when options are omitted. `--subdir` stores the target under a key-named subdirectory by setting `subdir = true`. `--include-all` stores the URL without `/playlists` for matching YouTube playlist collection URLs.
 
-`import-json` converts the old Archivist JSON config to the current TOML shape. It supports the recent `targets` array shape and the legacy `entries` object shape.
+`import-json` converts the old Archivist JSON config to the current TOML shape. It supports the recent `targets` array shape and the legacy `entries` object shape, and writes targets as a name-keyed TOML table.
 
 ## Config Compatibility
 
