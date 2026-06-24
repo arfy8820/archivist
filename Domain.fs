@@ -111,7 +111,8 @@ type AddRequest =
       label: string option
       outputTemplate: string option
       sourceType: SourceType option
-      subdir: bool option }
+      subdir: bool option 
+      includeAll: bool option }
 
 type ResolvedAdd =
     { label: string

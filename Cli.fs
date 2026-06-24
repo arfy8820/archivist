@@ -4,7 +4,7 @@ open System
 open Argu
 open Archivist.Domain
 
-let version = "0.1.0"
+let version = "0.5.0"
 
 let private parseConfigProperty (value: string option) =
     match value |> Option.map (fun text -> text.Trim().ToLowerInvariant()) with
@@ -42,6 +42,7 @@ type AddArgs =
     | Output of string
     | Type of string
     | Subdir
+    | Include_All
 
     interface IArgParserTemplate with
         member arg.Usage =
@@ -51,6 +52,8 @@ type AddArgs =
             | Output _ -> "Optional per-target output template override."
             | Type _ -> "Target type: auto, youtube, or podcast."
             | Subdir -> "Store the target in a subdirectory named after the label."
+            | Include_All -> "Youtube: Include videos not included in a playlist if URL ends in /playlist."
+
 
 type RemoveArgs =
     | [<MainCommand>] Remove_Name of string
@@ -199,7 +202,9 @@ let private commandFromParsed (results: ParseResults<CliArgs>) =
                           label = addArgs.TryGetResult(<@ Label @>)
                           outputTemplate = addArgs.TryGetResult(<@ Output @>)
                           sourceType = sourceType
-                          subdir = if addArgs.Contains(<@ Subdir @>) then Some true else None }
+                          subdir = if addArgs.Contains(<@ Subdir @>) then Some true else None
+                          includeAll = if addArgs.Contains(<@ Include_All @>) then Some true else None }
+
                 )
         | Remove removeArgs ->
             match removeArgs.TryGetResult(<@ Remove_Name @>) with
