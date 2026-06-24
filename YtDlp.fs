@@ -55,6 +55,17 @@ let private outputTemplate (config: Config) (target: Target) =
     | Some template when not (String.IsNullOrWhiteSpace template) -> template
     | _ -> config.defaultYoutubeTemplate
 
+let private targetUrls (target: Target) =
+    match target.urls with
+    | Some urls ->
+        urls
+        |> List.map (fun url -> url.Trim())
+        |> List.filter (fun url -> not (String.IsNullOrWhiteSpace url))
+        |> function
+            | [] -> [ target.url ]
+            | urls -> urls
+    | None -> [ target.url ]
+
 let buildSyncArgs (config: Config) (label: string) (target: Target) =
     let archivePath = youtubeArchiveFile config label
 
@@ -65,8 +76,8 @@ let buildSyncArgs (config: Config) (label: string) (target: Target) =
       |> Option.defaultValue ""
         |> fun subdir -> pathCombineForYoutube config.youtubeDir subdir
       "-o"
-      outputTemplate config target
-      target.url ]
+      outputTemplate config target ]
+    @ targetUrls target
 
 let sync (config: Config) (label: string) (target: Target) : Task<ProcessResult> =
     task {

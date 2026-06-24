@@ -29,6 +29,7 @@ let tryParseSourceType (value: string) =
 type Target =
     { name: string
       url: string
+      urls: string list option
       mode: string
       subdir: string option
       [<JsonPropertyName("output_template")>]
@@ -109,7 +110,8 @@ type AddRequest =
     { url: string option
       label: string option
       outputTemplate: string option
-      sourceType: SourceType option }
+      sourceType: SourceType option
+      subdir: bool option }
 
 type ResolvedAdd =
     { label: string

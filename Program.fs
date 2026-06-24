@@ -62,6 +62,16 @@ let private confirmYesDefault (message: string) =
         text.Trim().Equals("y", StringComparison.OrdinalIgnoreCase)
         || text.Trim().Equals("yes", StringComparison.OrdinalIgnoreCase)
 
+let private confirmNoDefault (message: string) =
+    let value = prompt message
+
+    match stringOptionOfNullable value with
+    | None -> false
+    | Some text when String.IsNullOrWhiteSpace text -> false
+    | Some text ->
+        text.Trim().Equals("y", StringComparison.OrdinalIgnoreCase)
+        || text.Trim().Equals("yes", StringComparison.OrdinalIgnoreCase)
+
 let private sanitizeLabel (label: string) =
     let invalid = Regex.Escape(String(Path.GetInvalidFileNameChars()))
     let invalidPattern = $"[{invalid}]"
@@ -141,10 +151,36 @@ let private sourceTypeForAdd (url: string) (request: AddRequest) =
     | None ->
         { name = ""
           url = url
+          urls = None
           mode = "auto"
           subdir = None
           outputTemplate = None }
         |> targetSourceType
+
+let private targetUrlsForAdd (url: string) (sourceType: SourceType) =
+    let playlistSuffix = "/playlists"
+    let trimmed = url.TrimEnd('/')
+
+    if sourceType = YouTube && trimmed.EndsWith(playlistSuffix, StringComparison.OrdinalIgnoreCase) then
+        let baseUrl = trimmed.Substring(0, trimmed.Length - playlistSuffix.Length)
+        let accepted = confirmNoDefault $"Also download '{baseUrl}' to capture videos not in a playlist? [y/N]: "
+
+        if accepted then
+            Some [ url; baseUrl ]
+        else
+            None
+    else
+        None
+
+let private resolveSubdir (label: string) (request: AddRequest) =
+    match request.subdir with
+    | Some true -> Some label
+    | Some false -> None
+    | None ->
+        if confirmNoDefault "Store target in subdirectory? [y/N]: " then
+            Some label
+        else
+            None
 
 let private chooseLabelFromProbe (probe: ProbeInfo) =
     match stableSuggestedLabel probe with
@@ -225,14 +261,17 @@ let private resolveAddRequest (logger: Logger) (request: AddRequest) : Task<Resu
         | Ok label when String.IsNullOrWhiteSpace label ->
             return Error "Label cannot be empty."
         | Ok label ->
+            let urls = targetUrlsForAdd url sourceType
+            let subdir = resolveSubdir label request
             return
                 Ok
                     { label = label
                       target =
                         { name = label
                           url = url
+                          urls = urls
                           mode = resolveMode request
-                          subdir = Some label
+                          subdir = subdir
                           outputTemplate = outputTemplate } }
     }
 
@@ -241,6 +280,10 @@ let private printTarget (target: Target) =
     printfn "  Type: %s" (target |> targetSourceType |> sourceTypeName)
     printfn "  Mode: %s" target.mode
     printfn "  URL: %s" target.url
+    match target.urls with
+    | Some urls when urls.Length > 1 ->
+        urls |> List.iter (printfn "  Sync URL: %s")
+    | _ -> ()
     match target.subdir with
     | Some subdir -> printfn "  Subdir: %s" subdir
     | None -> ()

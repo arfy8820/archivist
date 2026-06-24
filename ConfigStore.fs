@@ -30,6 +30,21 @@ let private tryGetString names json =
         value.GetString() |> stringOptionOfNullable
     | _ -> None
 
+let private tryGetStringList names json =
+    match tryGetProperty names json with
+    | Some value when value.ValueKind = JsonValueKind.Array ->
+        value.EnumerateArray()
+        |> Seq.choose (fun item ->
+            if item.ValueKind = JsonValueKind.String then
+                item.GetString() |> stringOptionOfNullable
+            else
+                None)
+        |> Seq.toList
+        |> function
+            | [] -> None
+            | urls -> Some urls
+    | _ -> None
+
 let private tryGetJson names json =
     tryGetProperty names json |> Option.map (fun value -> value.Clone())
 
@@ -52,6 +67,7 @@ let private parseNewTargets (root: JsonElement) =
                 Some
                     { name = name
                       url = url
+                      urls = tryGetStringList [ "urls" ] item
                       mode = tryGetString [ "mode" ] item |> Option.defaultValue "auto"
                       subdir = tryGetString [ "subdir" ] item
                       outputTemplate = tryGetString [ "output_template"; "outputTemplate" ] item }
@@ -74,6 +90,7 @@ let private parseLegacyTargets (root: JsonElement) =
                 Some
                     { name = property.Name
                       url = url
+                      urls = None
                       mode = mode
                       subdir = None
                       outputTemplate = tryGetString [ "outputTemplate"; "output_template" ] item }

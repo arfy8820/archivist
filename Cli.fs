@@ -41,6 +41,7 @@ type AddArgs =
     | Label of string
     | Output of string
     | Type of string
+    | Subdir
 
     interface IArgParserTemplate with
         member arg.Usage =
@@ -49,6 +50,7 @@ type AddArgs =
             | Label _ -> "Label used as the target name and default subdirectory."
             | Output _ -> "Optional per-target output template override."
             | Type _ -> "Target type: auto, youtube, or podcast."
+            | Subdir -> "Store the target in a subdirectory named after the label."
 
 type RemoveArgs =
     | [<MainCommand>] Remove_Name of string
@@ -196,7 +198,8 @@ let private commandFromParsed (results: ParseResults<CliArgs>) =
                         { url = addArgs.TryGetResult(<@ Url @>)
                           label = addArgs.TryGetResult(<@ Label @>)
                           outputTemplate = addArgs.TryGetResult(<@ Output @>)
-                          sourceType = sourceType }
+                          sourceType = sourceType
+                          subdir = if addArgs.Contains(<@ Subdir @>) then Some true else None }
                 )
         | Remove removeArgs ->
             match removeArgs.TryGetResult(<@ Remove_Name @>) with

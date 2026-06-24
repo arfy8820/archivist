@@ -49,7 +49,7 @@ config show [property]
 config set <property> [value]
 probe <name>
 sync [--all|name]
-add [--url URL] [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast]
+add [--url URL] [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir]
 remove <name> [--delete-archive]
 ```
 
@@ -62,7 +62,7 @@ Implemented global options:
 --version, -v
 ```
 
-`sync` with no target means all targets. `add` may prompt for URL, output template, and label when options are omitted.
+`sync` with no target means all targets. `add` may prompt for URL, output template, label, and subdirectory behavior when options are omitted. `--subdir` stores the target under a label-named subdirectory.
 
 ## Config Compatibility
 

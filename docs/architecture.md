@@ -44,7 +44,7 @@ CLI argv
 `Domain.fs` defines:
 
 * `SourceType` with `YouTube` and `Podcast`.
-* `Target`, including `name`, `url`, `mode`, `subdir`, and `output_template`.
+* `Target`, including `name`, `url`, optional `urls`, `mode`, `subdir`, and `output_template`.
 * `Config`, including YouTube and podcast roots, default templates, targets, and optional JSON option blocks.
 * CLI command and parsed input types.
 * Source type parsing and inference.
@@ -163,7 +163,7 @@ config show [property]
 config set <property> [value]
 probe <name>
 sync [--all|name]
-add [--url URL] [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast]
+add [--url URL] [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir]
 remove <name> [--delete-archive]
 ```
 

@@ -57,6 +57,7 @@ Current config shape:
     {
       "name": "youtube-linux",
       "url": "https://www.youtube.com/example",
+      "urls": null,
       "mode": "youtube",
       "subdir": "youtube-linux",
       "output_template": null
@@ -64,6 +65,7 @@ Current config shape:
     {
       "name": "my-podcast",
       "url": "https://example.com/feed.xml",
+      "urls": null,
       "mode": "podcast",
       "subdir": "my-podcast",
       "output_template": null
@@ -93,6 +95,7 @@ Target management:
 
 ```bash
 archivist add --url https://www.youtube.com/example --label youtube-linux --type youtube
+archivist add --url https://www.youtube.com/example --label youtube-linux --type youtube --subdir
 archivist add --url https://example.com/feed.xml --label my-podcast --type podcast
 archivist add --url https://example.com/feed.xml --type podcast --output "{{title}}"
 archivist list
@@ -101,7 +104,9 @@ archivist remove my-podcast
 archivist remove my-podcast --delete-archive
 ```
 
-If `--label` is omitted, Archivist probes the source and prompts for a label. YouTube labels are probed with `yt-dlp --dump-json`; podcast labels are probed with `deno x podcast-dl --info`.
+If `--label` is omitted, Archivist probes the source and prompts for a label. YouTube labels are probed with `yt-dlp --dump-json`; podcast labels are probed with `deno x podcast-dl --info`. `add` prompts whether to store downloads in a target subdirectory unless `--subdir` is passed.
+
+When adding a YouTube target whose URL ends in `/playlists`, Archivist can also store the URL without that suffix on the same target. Sync passes both URLs to `yt-dlp` with the same download archive file.
 
 Sync:
 
@@ -145,7 +150,7 @@ podcast_dl_options, podcast_dl_opts, podcast_dl, podcast-dl
 YouTube sync runs:
 
 ```text
-yt-dlp --download-archive <youtube_dir>/<label>/.download-archive.txt --paths <youtube_dir> -o <template> <url>
+yt-dlp --download-archive <youtube_dir>/<label>/.download-archive.txt --paths <youtube_dir> -o <template> <url> [<url>...]
 ```
 
 If a target has no `output_template`, its output template is:
