@@ -564,9 +564,9 @@ fn normalize_handle(value: Option<&str>) -> Option<String> {
     if trimmed.is_empty() || trimmed.starts_with("UC") || trimmed.contains(' ') {
         None
     } else if trimmed.starts_with('@') {
-        Some(sanitize_label(trimmed))
+        Some(sanitize_label(trimmed)[1..].to_string()) // Remove @ sign.
     } else {
-        Some(sanitize_label(&format!("@{trimmed}")))
+        Some(sanitize_label(&format!("{trimmed}")))
     }
 }
 
