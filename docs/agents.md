@@ -71,7 +71,7 @@ yt_dlp_options
 podcast_dl_options
 ```
 
-`yt_dlp_options` and `podcast_dl_options` are currently persisted but not applied to downloader arguments.
+`yt_dlp_options` and `podcast_dl_options` are TOML arrays of strings. YouTube options are prepended to `yt-dlp` sync arguments. Podcast options are inserted after `deno x podcast-dl` and before Archivist's generated podcast-dl sync arguments.
 
 ## External Tools
 

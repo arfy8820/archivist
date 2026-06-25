@@ -173,7 +173,9 @@ impl Default for Config {
             default_youtube_template: default_youtube_template(),
             default_podcast_template: default_podcast_template(),
             targets: HashMap::new(),
-            yt_dlp_options: None,
+            yt_dlp_options: Some(toml::Value::Array(vec![toml::Value::String(
+                "--no-progress".to_string(),
+            )])),
             podcast_dl_options: None,
         }
     }
@@ -335,13 +337,17 @@ fn run(cli: Cli) -> i32 {
         return 0;
     }
 
+    let config_path = cli.config_file.clone().unwrap_or_else(config_file);
+
     let Some(command) = cli.command.clone() else {
+        if cli.config_file.is_some() {
+            return handle_default_config(&config_path);
+        }
+
         println!("archivist version {VERSION}");
         println!("use -h or --help for usage information.");
         return 0;
     };
-
-    let config_path = cli.config_file.clone().unwrap_or_else(config_file);
 
     if let Commands::ImportJson(args) = command {
         return handle_import_json(&cli, &config_path, args);
@@ -368,6 +374,25 @@ fn run(cli: Cli) -> i32 {
         Commands::Probe(args) => handle_probe(&cli, &config, args),
         Commands::Config(args) => handle_config(&cli, &config_path, config, args),
         Commands::ImportJson(_) => unreachable!("import-json is handled before config load"),
+    }
+}
+
+fn handle_default_config(config_path: &Path) -> i32 {
+    if config_path.exists() {
+        println!("Config already exists at '{}'.", config_path.display());
+        return 0;
+    }
+
+    let config = Config::default();
+    match save_config(config_path, &config) {
+        Ok(()) => {
+            println!("Created new default config at '{}'.", config_path.display());
+            0
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            1
+        }
     }
 }
 
@@ -560,8 +585,22 @@ fn handle_sync(cli: &Cli, config: &Config, args: SyncArgs) -> i32 {
     let mut final_code = 0;
     for (name, target) in entries {
         let (executable, command_args) = match target.source_type() {
-            SourceType::YouTube => ("yt-dlp", build_ytdlp_sync_args(config, &name, &target)),
-            SourceType::Podcast => ("deno", build_podcast_sync_args(config, &target)),
+            SourceType::YouTube => match build_ytdlp_sync_args(config, &name, &target) {
+                Ok(args) => ("yt-dlp", args),
+                Err(error) => {
+                    eprintln!("{error}");
+                    final_code = 1;
+                    continue;
+                }
+            },
+            SourceType::Podcast => match build_podcast_sync_args(config, &target) {
+                Ok(args) => ("deno", args),
+                Err(error) => {
+                    eprintln!("{error}");
+                    final_code = 1;
+                    continue;
+                }
+            },
         };
 
         let command_line = format_command(executable, &command_args);
@@ -874,8 +913,13 @@ fn probe_podcast_label(url: &str) -> Result<String, String> {
         .ok_or_else(|| "podcast-dl --info did not return a podcast title.".to_string())
 }
 
-fn build_ytdlp_sync_args(config: &Config, label: &str, target: &Target) -> Vec<String> {
-    let mut args = vec![
+fn build_ytdlp_sync_args(
+    config: &Config,
+    label: &str,
+    target: &Target,
+) -> Result<Vec<String>, String> {
+    let mut args = config_option_args(&config.yt_dlp_options, "yt_dlp_options")?;
+    args.extend([
         "--download-archive".to_string(),
         youtube_archive_file(config, label)
             .to_string_lossy()
@@ -896,15 +940,18 @@ fn build_ytdlp_sync_args(config: &Config, label: &str, target: &Target) -> Vec<S
             .filter(|template| !template.trim().is_empty())
             .unwrap_or(&config.default_youtube_template)
             .to_string(),
-    ];
+    ]);
     args.extend(target.sync_urls());
-    args
+    Ok(args)
 }
 
-fn build_podcast_sync_args(config: &Config, target: &Target) -> Vec<String> {
-    vec![
-        "x".to_string(),
-        "podcast-dl".to_string(),
+fn build_podcast_sync_args(config: &Config, target: &Target) -> Result<Vec<String>, String> {
+    let mut args = vec!["x".to_string(), "podcast-dl".to_string()];
+    args.extend(config_option_args(
+        &config.podcast_dl_options,
+        "podcast_dl_options",
+    )?);
+    args.extend([
         "--url".to_string(),
         target.url.clone(),
         "--out-dir".to_string(),
@@ -927,7 +974,28 @@ fn build_podcast_sync_args(config: &Config, target: &Target) -> Vec<String> {
             .into_owned(),
         "--include-meta".to_string(),
         "--include-episode-meta".to_string(),
-    ]
+    ]);
+    Ok(args)
+}
+
+fn config_option_args(
+    value: &Option<toml::Value>,
+    property_name: &str,
+) -> Result<Vec<String>, String> {
+    match value {
+        None => Ok(Vec::new()),
+        Some(toml::Value::Array(items)) => items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| match item {
+                toml::Value::String(value) => Ok(value.clone()),
+                _ => Err(format!(
+                    "{property_name} must be an array of strings; item {index} is not a string."
+                )),
+            })
+            .collect(),
+        Some(_) => Err(format!("{property_name} must be a TOML array of strings.")),
+    }
 }
 
 fn run_process(executable: &str, args: &[String]) -> io::Result<ProcessResult> {
@@ -1230,10 +1298,14 @@ fn set_config_property(
 
 fn parse_toml_option(value: Option<&str>) -> Result<Option<toml::Value>, String> {
     match value.map(str::trim).filter(|value| !value.is_empty()) {
-        Some(value) => toml::from_str(value)
-            .map(Some)
-            .or_else(|_| value.parse::<toml::Value>().map(Some))
-            .map_err(|error| format!("value must be valid TOML: {error}")),
+        Some(value) => value
+            .parse::<toml::Value>()
+            .or_else(|_| toml::from_str(value))
+            .map_err(|error| format!("value must be valid TOML: {error}"))
+            .and_then(|value| {
+                config_option_args(&Some(value.clone()), "value")?;
+                Ok(Some(value))
+            }),
         None => Ok(None),
     }
 }
@@ -1294,8 +1366,8 @@ fn parse_json_config(text: &str) -> Result<Config, String> {
         default_youtube_template,
         default_podcast_template,
         targets,
-        yt_dlp_options: json_get_toml_value(&root, &["yt_dlp", "yt_dlp_opts", "ytDlp"]),
-        podcast_dl_options: json_get_toml_value(
+        yt_dlp_options: json_get_option_array(&root, &["yt_dlp", "yt_dlp_opts", "ytDlp"]),
+        podcast_dl_options: json_get_option_array(
             &root,
             &[
                 "podcast_dl",
@@ -1398,37 +1470,23 @@ fn json_get_subdir(root: &JsonValue) -> bool {
     }
 }
 
-fn json_get_toml_value(root: &JsonValue, names: &[&str]) -> Option<toml::Value> {
-    names
+fn json_get_option_array(root: &JsonValue, names: &[&str]) -> Option<toml::Value> {
+    let values: Vec<_> = names
         .iter()
-        .find_map(|name| root.get(*name))
-        .and_then(json_to_toml_value)
-}
-
-fn json_to_toml_value(value: &JsonValue) -> Option<toml::Value> {
-    match value {
-        JsonValue::Null => None,
-        JsonValue::Bool(value) => Some(toml::Value::Boolean(*value)),
-        JsonValue::Number(value) => {
-            if let Some(value) = value.as_i64() {
-                Some(toml::Value::Integer(value))
-            } else {
-                value.as_f64().map(toml::Value::Float)
-            }
-        }
-        JsonValue::String(value) => Some(toml::Value::String(value.clone())),
-        JsonValue::Array(values) => Some(toml::Value::Array(
-            values.iter().filter_map(json_to_toml_value).collect(),
-        )),
-        JsonValue::Object(values) => {
-            let table = values
+        .find_map(|name| root.get(*name).and_then(JsonValue::as_array))
+        .map(|items| {
+            items
                 .iter()
-                .filter_map(|(key, value)| {
-                    json_to_toml_value(value).map(|value| (key.clone(), value))
-                })
-                .collect();
-            Some(toml::Value::Table(table))
-        }
+                .filter_map(JsonValue::as_str)
+                .map(|value| toml::Value::String(value.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if values.is_empty() {
+        None
+    } else {
+        Some(toml::Value::Array(values))
     }
 }
 
@@ -1679,5 +1737,76 @@ mod tests {
         assert!(log.contains("[STDOUT] out1"));
         assert!(log.contains("[STDERR] err1"));
         assert!(log.contains("ExitCode: 0"));
+    }
+
+    #[test]
+    fn ytdlp_options_are_prepended_to_sync_args() {
+        let config = Config {
+            yt_dlp_options: Some(toml::Value::Array(vec![
+                toml::Value::String("--ignore-errors".to_string()),
+                toml::Value::String("--no-warnings".to_string()),
+            ])),
+            ..Config::default()
+        };
+        let target = Target {
+            url: "https://www.youtube.com/example".to_string(),
+            urls: None,
+            mode: "youtube".to_string(),
+            subdir: false,
+            output_template: None,
+        };
+
+        let args = build_ytdlp_sync_args(&config, "example", &target).expect("valid options");
+
+        assert_eq!(args[0], "--ignore-errors");
+        assert_eq!(args[1], "--no-warnings");
+        assert_eq!(args[2], "--download-archive");
+    }
+
+    #[test]
+    fn podcast_options_are_inserted_after_deno_podcast_dl_prefix() {
+        let config = Config {
+            podcast_dl_options: Some(toml::Value::Array(vec![
+                toml::Value::String("--debug".to_string()),
+                toml::Value::String("--retry".to_string()),
+            ])),
+            ..Config::default()
+        };
+        let target = Target {
+            url: "https://example.com/feed.xml".to_string(),
+            urls: None,
+            mode: "podcast".to_string(),
+            subdir: false,
+            output_template: None,
+        };
+
+        let args = build_podcast_sync_args(&config, &target).expect("valid options");
+
+        assert_eq!(args[0], "x");
+        assert_eq!(args[1], "podcast-dl");
+        assert_eq!(args[2], "--debug");
+        assert_eq!(args[3], "--retry");
+        assert_eq!(args[4], "--url");
+    }
+
+    #[test]
+    fn configured_options_must_be_arrays_of_strings() {
+        let value = Some(toml::Value::Array(vec![toml::Value::Integer(1)]));
+
+        let error = config_option_args(&value, "yt_dlp_options").expect_err("invalid option");
+
+        assert!(error.contains("array of strings"));
+    }
+
+    #[test]
+    fn parse_toml_option_accepts_single_string_array() {
+        let value = parse_toml_option(Some("[\"--debug\"]")).expect("valid option array");
+
+        assert_eq!(
+            value,
+            Some(toml::Value::Array(vec![toml::Value::String(
+                "--debug".to_string()
+            )]))
+        );
     }
 }

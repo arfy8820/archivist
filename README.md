@@ -38,6 +38,12 @@ Set `ARCHIVIST_CONFIG_DIR` to change the config directory, or pass `--config-fil
 archivist --config-file ./config.toml list
 ```
 
+To create a new default config at an explicit path:
+
+```bash
+archivist --config-file ./config.toml
+```
+
 Default media directories are:
 
 ```text
@@ -76,7 +82,7 @@ urls = [
 mode = "youtube"
 ```
 
-`yt_dlp_options` and `podcast_dl_options` can be stored with `config set`, but the current sync code does not yet apply those option blocks to generated downloader arguments.
+`yt_dlp_options` and `podcast_dl_options` are TOML arrays of strings. They are added before Archivist's generated sync arguments for each downloader.
 
 ## Commands
 
@@ -126,7 +132,8 @@ archivist config set youtube_dir /Volumes/archive/youtube
 archivist config set podcast_dir /Volumes/archive/podcasts
 archivist config set default_youtube_template "%(playlist)s/%(upload_date>%Y-%m-%d)s - %(title)s.%(ext)s"
 archivist config set default_podcast_template "{{release_year}}-{{release_month}}-{{release_day}} - {{title}}"
-archivist config set yt_dlp_options 'ignoreerrors = true'
+archivist config set yt_dlp_options '["--ignore-errors", "--no-warnings"]'
+archivist config set podcast_dl_options '["--debug"]'
 archivist config set podcast_dl_options
 archivist import-json ./old-config.json --output ./config.toml
 ```

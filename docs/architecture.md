@@ -77,7 +77,7 @@ mode = "youtube"
 subdir = true
 ```
 
-`yt_dlp_options` and `podcast_dl_options` are parsed and persisted as TOML values, but are not yet applied to generated downloader arguments.
+`yt_dlp_options` and `podcast_dl_options` are parsed and persisted as TOML arrays of strings. YouTube options are prepended to `yt-dlp` sync arguments. Podcast options are inserted after `deno x podcast-dl` and before Archivist's generated podcast-dl sync arguments.
 
 ## Process Runner
 
@@ -203,5 +203,4 @@ Useful future work:
 * Dry-run support.
 * Cancellation and progress events for process execution.
 * Tests for config parsing, target validation, template resolution, and argument construction.
-* Applying `yt_dlp_options` and `podcast_dl_options` consistently.
 * Moving prompt/rendering code out of orchestration once application services exist.
