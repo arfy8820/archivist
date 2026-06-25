@@ -61,12 +61,12 @@ default_podcast_template = "{{release_year}}-{{release_month}}-{{release_day}} -
 
 [targets.youtube-linux]
 urls = ["https://www.youtube.com/example"]
-mode = "youtube"
+source = "youtube"
 subdir = true
 
 [targets.my-podcast]
 urls = ["https://example.com/feed.xml"]
-mode = "podcast"
+source = "podcast"
 subdir = true
 ```
 
@@ -78,7 +78,7 @@ urls = [
   "https://www.youtube.com/@example/playlists",
   "https://www.youtube.com/@example",
 ]
-mode = "youtube"
+source = "youtube"
 ```
 
 `yt_dlp_options` and `podcast_dl_options` are TOML arrays of strings. They are added before Archivist's generated sync arguments for each downloader.
@@ -99,7 +99,7 @@ Target management:
 ```bash
 archivist add --url https://www.youtube.com/example --label youtube-linux --type youtube
 archivist add --url https://www.youtube.com/example --label youtube-linux --type youtube --subdir
-archivist add --url https://www.youtube.com/@example/playlists --url https://www.youtube.com/@example --label example --type youtube
+archivist add --url https://www.youtube.com/@example/playlists --label example --type youtube --include-all
 archivist add --url https://example.com/feed.xml --label my-podcast --type podcast
 archivist add --url https://example.com/feed.xml --type podcast --output "{{title}}"
 archivist list
@@ -109,6 +109,8 @@ archivist remove my-podcast --delete-archive
 ```
 
 If `--label` is omitted, Archivist probes the first URL and prompts for a label. YouTube labels are probed with `yt-dlp --dump-json`; podcast labels are probed with `deno x podcast-dl --info`. `add` prompts whether to store downloads in a target subdirectory unless `--subdir` is passed. When no `--url` is supplied, interactive add asks whether to add another URL to the target.
+
+When adding a YouTube URL ending in `/playlists`, Archivist asks whether to also add the base URL to capture videos not in a playlist. `--include-all` answers yes without prompting.
 
 Sync:
 
@@ -178,7 +180,7 @@ During sync, downloader stdout and stderr are streamed into the log file as the 
 
 The F# version used multiple small modules and immutable records to make the CLI flow explicit inside a .NET executable. JSON config came from `System.Text.Json`, CLI parsing came from Argu, and async process execution used .NET tasks.
 
-The Rust version uses a single Cargo binary with `clap` for command parsing, `serde` for TOML and JSON output, and `std::process::Command` for downloader execution. The domain model is represented by Rust structs and enums with explicit ownership, and recoverable failures are handled with `Result`.
+The Rust version uses a Cargo binary with `clap` for command parsing, `serde` for TOML and JSON output, and `std::process::Command` for downloader execution. The domain model is represented by Rust structs and enums with explicit ownership, and recoverable failures are handled with `Result`.
 
 The main behavior difference is configuration: Rust writes TOML at `config.toml` by default rather than JSON at `config.json`. JSON is still supported for CLI output via `--json`, but config persistence is TOML-first.
 
@@ -187,8 +189,15 @@ The main behavior difference is configuration: Rust writes TOML at `config.toml`
 The code is organized as a compact Rust project:
 
 ```text
-Cargo.toml      Package metadata and dependencies
-src/main.rs     CLI parser, domain model, config store, process runner, and command handlers
+Cargo.toml          Package metadata and dependencies
+src/main.rs         CLI parser, prompts, rendering, and command handlers
+src/types.rs        Domain model and defaults
+src/config.rs       TOML config loading, saving, and config command helpers
+src/yt_dlp.rs       yt-dlp probing, playlist URL expansion, and sync arguments
+src/podcast_dl.rs   podcast-dl probing and sync arguments
+src/process.rs      Subprocess execution and streamed log writing
+src/paths.rs        Config, archive, and log path helpers
+src/util.rs         Small formatting and label helpers
 ```
 
 See [docs/architecture.md](docs/architecture.md) for architecture notes and future layering direction.

@@ -4,20 +4,27 @@
 
 Archivist is a Rust media archiving CLI.
 
-The current repo is a single Cargo binary crate. It uses `yt-dlp` for YouTube-style sources and `deno x podcast-dl` for podcast feeds.
+The current repo is a Cargo binary crate. It uses `yt-dlp` for YouTube-style sources and `deno x podcast-dl` for podcast feeds.
 
 ## Current Files
 
 ```text
-Cargo.toml      Package metadata and dependencies
-src/main.rs     CLI parser, domain model, TOML config, process calls, prompts, rendering
+Cargo.toml          Package metadata and dependencies
+src/main.rs         CLI parser, prompts, rendering, and command handlers
+src/types.rs        Domain model and defaults
+src/config.rs       TOML config loading, saving, and config command helpers
+src/yt_dlp.rs       yt-dlp probing, playlist URL expansion, and sync arguments
+src/podcast_dl.rs   podcast-dl probing and sync arguments
+src/process.rs      Subprocess execution and streamed log writing
+src/paths.rs        Config, archive, and log path helpers
+src/util.rs         Small formatting and label helpers
 ```
 
 ## Important Design Rule
 
 Keep core behavior independent from the user interface where practical.
 
-`src/main.rs` currently contains orchestration and console rendering because the CLI is still compact. Avoid putting new business rules directly into parser cases or print-only code paths. Prefer small functions that can later move into application/core modules.
+`src/main.rs` contains orchestration and console rendering. Keep new business rules in focused modules where practical instead of parser cases or print-only code paths.
 
 ## Coding Style
 
@@ -39,7 +46,7 @@ config show [property]
 config set <property> [value]
 probe <name>
 sync [--all|name]
-add [--url URL]... [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir]
+add [--url URL]... [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir] [--include-all]
 remove <name> [--delete-archive]
 ```
 
@@ -52,7 +59,7 @@ Implemented global options:
 --version, -v
 ```
 
-`sync` with no target means all targets. `add` may prompt for URL, output template, label, and subdirectory behavior when options are omitted. `--url` may be supplied multiple times. In interactive mode, `add` asks whether to add another URL to the target. `--subdir` stores the target under a key-named subdirectory by setting `subdir = true`.
+`sync` with no target means all targets. `add` may prompt for URL, output template, label, YouTube playlist expansion, and subdirectory behavior when options are omitted. `--url` may be supplied multiple times. In interactive mode, `add` asks whether to add another URL to the target. `--subdir` stores the target under a key-named subdirectory by setting `subdir = true`. `--include-all` adds the base URL for YouTube URLs ending in `/playlists` without prompting.
 
 ## Config Shape
 
@@ -113,23 +120,23 @@ When adding podcast features:
 
 ## Future Architecture
 
-The likely future split is:
+Possible future layering, if the code grows further:
 
 ```text
-src/domain.rs
+src/cli.rs
 src/config.rs
-src/downloaders/ytdlp.rs
+src/domain.rs
+src/downloaders/yt_dlp.rs
 src/downloaders/podcast_dl.rs
 src/process.rs
-src/cli.rs
 src/main.rs
 ```
 
-Do not force that split prematurely. When the code grows enough to justify it, move behavior along the boundaries described in `docs/architecture.md`.
+Do not force deeper layering prematurely. When the code grows enough to justify it, move behavior along the boundaries described in `docs/architecture.md`.
 
 ## Testing Expectations
 
-There is no test module yet. When adding tests, start with pure or near-pure behavior:
+There are focused unit tests in the config, downloader, and process modules. When adding tests, prefer pure or near-pure behavior:
 
 * Config parsing.
 * Source type parsing and inference.

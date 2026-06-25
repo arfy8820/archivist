@@ -2,16 +2,21 @@
 
 ## Current Shape
 
-Archivist is currently one Rust binary crate.
-
-The implementation is intentionally compact:
+Archivist is currently one Rust binary crate split into focused modules:
 
 ```text
 Cargo.toml
-src/main.rs
+src/main.rs         CLI parser, prompts, rendering, and command handlers
+src/types.rs        Domain model and defaults
+src/config.rs       TOML config loading, saving, and config command helpers
+src/yt_dlp.rs       yt-dlp probing, playlist URL expansion, and sync arguments
+src/podcast_dl.rs   podcast-dl probing and sync arguments
+src/process.rs      Subprocess execution and streamed log writing
+src/paths.rs        Config, archive, and log path helpers
+src/util.rs         Small formatting and label helpers
 ```
 
-The project uses `clap` for CLI parsing, `serde` for serialization, `toml` for config persistence, `serde_json` for JSON output and yt-dlp probe parsing, and `std::process::Command` for external tools. There are no dedicated test modules yet.
+The project uses `clap` for CLI parsing, `serde` for serialization, `toml` for config persistence, `serde_json` for JSON output and yt-dlp probe parsing, and `std::process::Command` for external tools. Unit tests live beside the config, downloader, and process helpers they cover.
 
 ## Implemented Data Flow
 
@@ -28,14 +33,14 @@ CLI argv
     -> exit code
 ```
 
-`src/main.rs` currently contains domain types, command handling, config persistence, process execution, prompts, and console rendering. That is acceptable for the current compact CLI, but new domain behavior should be isolated in focused functions so it can later move into modules.
+`src/main.rs` owns command handling, prompts, and console rendering. Domain types, config persistence, process execution, paths, and downloader argument construction live in separate modules.
 
 ## Domain Model
 
 The Rust domain model defines:
 
 * `SourceType` with `YouTube` and `Podcast`.
-* `Target`, keyed by target name, including `urls`, `mode`, boolean `subdir`, and `output_template`.
+* `Target`, keyed by target name, including `urls`, `source`, boolean `subdir`, and `output_template`.
 * `Config`, including YouTube and podcast roots, default templates, targets, and optional TOML option blocks.
 * `ProcessResult` for external process outcomes.
 
@@ -43,7 +48,7 @@ Source inference is intentionally simple:
 
 * YouTube mode is selected for YouTube, youtu.be, SoundCloud, and unknown URLs.
 * Podcast mode is selected for feed/RSS/XML-looking URLs and a few known podcast hosts.
-* Explicit target mode wins over inference.
+* Explicit target source wins over inference.
 
 ## Paths
 
@@ -73,7 +78,7 @@ default_podcast_template = "..."
 
 [targets.example]
 urls = ["..."]
-mode = "youtube"
+source = "youtube"
 subdir = true
 ```
 
@@ -107,7 +112,7 @@ The archive file for a YouTube target is:
 <youtube_dir>/<label>/.download-archive.txt
 ```
 
-Targets can store one or more URLs. Sync passes all stored YouTube URLs to one yt-dlp invocation sharing the same archive file.
+Targets can store one or more URLs. Sync passes all stored YouTube URLs to one yt-dlp invocation sharing the same archive file. When adding a YouTube URL ending in `/playlists`, Archivist can add the base URL to the target URL list as well.
 
 ## podcast-dl Integration
 
@@ -144,7 +149,7 @@ config show [property]
 config set <property> [value]
 probe <name>
 sync [--all|name]
-add [--url URL]... [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir]
+add [--url URL]... [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir] [--include-all]
 remove <name> [--delete-archive]
 ```
 
@@ -178,19 +183,19 @@ The Rust version uses explicit structs/enums, `clap` derive macros, `serde`, TOM
 
 ## Future Layering Direction
 
-The desired long-term shape remains:
+Possible deeper layering, if the code grows further:
 
 ```text
-src/domain.rs
+src/cli.rs
 src/config.rs
-src/downloaders/ytdlp.rs
+src/domain.rs
+src/downloaders/yt_dlp.rs
 src/downloaders/podcast_dl.rs
 src/process.rs
-src/cli.rs
 src/main.rs
 ```
 
-That split should happen when the code size or test surface justifies it. Until then, prefer keeping functions focused and avoiding broad abstractions.
+That split should happen only when the code size or test surface justifies it. Until then, prefer keeping functions focused and avoiding broad abstractions.
 
 ## Future GUI Requirements To Preserve
 
