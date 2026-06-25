@@ -42,8 +42,8 @@ impl SourceType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Target {
     urls: Vec<String>,
-    #[serde(default = "default_mode")]
-    mode: String,
+    #[serde(default = "default_source")]
+    source: String,
     #[serde(default, skip_serializing_if = "is_false")]
     subdir: bool,
     #[serde(
@@ -54,7 +54,7 @@ struct Target {
     output_template: Option<String>,
 }
 
-fn default_mode() -> String {
+fn default_source() -> String {
     "auto".to_string()
 }
 
@@ -64,7 +64,7 @@ fn is_false(value: &bool) -> bool {
 
 impl Target {
     fn source_type(&self) -> SourceType {
-        match self.mode.trim().to_ascii_lowercase().as_str() {
+        match self.source.trim().to_ascii_lowercase().as_str() {
             "podcast" | "podcast-dl" | "rss" => SourceType::Podcast,
             "youtube" | "yt" | "yt-dlp" => SourceType::YouTube,
             _ => infer_source_type(self.primary_url()),
@@ -379,13 +379,13 @@ fn handle_add(cli: &Cli, config_path: &Path, mut config: Config, args: AddArgs) 
     } else {
         false
     };
-    let mode = requested_source
+    let source = requested_source
         .map(SourceType::name)
         .unwrap_or("auto")
         .to_string();
     let target = Target {
         urls,
-        mode,
+        source,
         subdir,
         output_template,
     };
@@ -471,13 +471,13 @@ fn handle_probe(cli: &Cli, config: &Config, args: ProbeArgs) -> i32 {
         return 1;
     };
 
-    let mode = target.source_type().name();
+    let source = target.source_type().name();
     if cli.json {
         print_json(
-            &serde_json::json!({ "name": args.name, "mode": mode, "url": target.primary_url() }),
+            &serde_json::json!({ "name": args.name, "source": source, "url": target.primary_url() }),
         );
     } else {
-        println!("{mode}");
+        println!("{source}");
     }
     0
 }
@@ -1023,8 +1023,8 @@ fn print_sync_result(label: &str, result: &ProcessResult) {
 
 fn print_target(name: &str, target: &Target) {
     println!("{name}");
-    println!("  Type: {}", target.source_type().name());
-    println!("  Mode: {}", target.mode);
+    println!("  inferred source: {}", target.source_type().name());
+    println!("  Requested source: {}", target.source);
     match target.urls.as_slice() {
         [] => println!("  URLs: none"),
         [url] => println!("  URL: {url}"),
@@ -1431,7 +1431,7 @@ mod tests {
         };
         let target = Target {
             urls: vec!["https://www.youtube.com/example".to_string()],
-            mode: "youtube".to_string(),
+            source: "youtube".to_string(),
             subdir: false,
             output_template: None,
         };
@@ -1454,7 +1454,7 @@ mod tests {
         };
         let target = Target {
             urls: vec!["https://example.com/feed.xml".to_string()],
-            mode: "podcast".to_string(),
+            source: "podcast".to_string(),
             subdir: false,
             output_template: None,
         };
