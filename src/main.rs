@@ -1,8 +1,7 @@
 use chrono::Local;
 use clap::{Args, Parser, Subcommand};
 use regex::Regex;
-use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::Value as JsonValue;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -42,16 +41,10 @@ impl SourceType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Target {
-    url: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    urls: Option<Vec<String>>,
+    urls: Vec<String>,
     #[serde(default = "default_mode")]
     mode: String,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_subdir",
-        skip_serializing_if = "is_false"
-    )]
+    #[serde(default, skip_serializing_if = "is_false")]
     subdir: bool,
     #[serde(
         default,
@@ -59,13 +52,6 @@ struct Target {
         skip_serializing_if = "Option::is_none"
     )]
     output_template: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct NamedTarget {
-    name: String,
-    #[serde(flatten)]
-    target: Target,
 }
 
 fn default_mode() -> String {
@@ -76,44 +62,17 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
-fn deserialize_subdir<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Option::<toml::Value>::deserialize(deserializer)?;
-    Ok(match value {
-        Some(toml::Value::Boolean(value)) => value,
-        Some(toml::Value::String(value)) => !value.trim().is_empty(),
-        Some(_) => false,
-        None => false,
-    })
-}
-
 impl Target {
     fn source_type(&self) -> SourceType {
         match self.mode.trim().to_ascii_lowercase().as_str() {
             "podcast" | "podcast-dl" | "rss" => SourceType::Podcast,
             "youtube" | "yt" | "yt-dlp" => SourceType::YouTube,
-            _ => infer_source_type(&self.url),
+            _ => infer_source_type(self.primary_url()),
         }
     }
 
-    fn sync_urls(&self) -> Vec<String> {
-        match &self.urls {
-            Some(urls) => {
-                let urls: Vec<String> = urls
-                    .iter()
-                    .map(|url| url.trim().to_string())
-                    .filter(|url| !url.is_empty())
-                    .collect();
-                if urls.is_empty() {
-                    vec![self.url.clone()]
-                } else {
-                    urls
-                }
-            }
-            None => vec![self.url.clone()],
-        }
+    fn primary_url(&self) -> &str {
+        self.urls.first().map(String::as_str).unwrap_or("")
     }
 }
 
@@ -245,13 +204,12 @@ enum Commands {
     Sync(SyncArgs),
     Probe(ProbeArgs),
     Config(ConfigCommand),
-    ImportJson(ImportJsonArgs),
 }
 
 #[derive(Args, Debug, Clone)]
 struct AddArgs {
-    #[arg(long)]
-    url: Option<String>,
+    #[arg(long = "url")]
+    urls: Vec<String>,
     #[arg(long)]
     label: Option<String>,
     #[arg(long)]
@@ -260,8 +218,6 @@ struct AddArgs {
     source_type: Option<String>,
     #[arg(long)]
     subdir: bool,
-    #[arg(long = "include-all")]
-    include_all: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -281,15 +237,6 @@ struct SyncArgs {
 #[derive(Args, Debug, Clone)]
 struct ProbeArgs {
     name: String,
-}
-
-#[derive(Args, Debug, Clone)]
-struct ImportJsonArgs {
-    input: PathBuf,
-    #[arg(short, long)]
-    output: Option<PathBuf>,
-    #[arg(long)]
-    force: bool,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -349,10 +296,6 @@ fn run(cli: Cli) -> i32 {
         return 0;
     };
 
-    if let Commands::ImportJson(args) = command {
-        return handle_import_json(&cli, &config_path, args);
-    }
-
     log_info(
         cli.quiet,
         &format!("Loading config from {}", config_path.display()),
@@ -373,7 +316,6 @@ fn run(cli: Cli) -> i32 {
         Commands::Sync(args) => handle_sync(&cli, &config, args),
         Commands::Probe(args) => handle_probe(&cli, &config, args),
         Commands::Config(args) => handle_config(&cli, &config_path, config, args),
-        Commands::ImportJson(_) => unreachable!("import-json is handled before config load"),
     }
 }
 
@@ -397,15 +339,8 @@ fn handle_default_config(config_path: &Path) -> i32 {
 }
 
 fn handle_add(cli: &Cli, config_path: &Path, mut config: Config, args: AddArgs) -> i32 {
-    let url = match args
-        .url
-        .as_deref()
-        .map(str::trim)
-        .filter(|url| !url.is_empty())
-    {
-        Some(url) => url.to_string(),
-        None => prompt_required("URL: "),
-    };
+    let urls = resolve_urls(args.urls);
+    let primary_url = urls.first().cloned().unwrap_or_default();
 
     let output_template = match args
         .output
@@ -424,8 +359,8 @@ fn handle_add(cli: &Cli, config_path: &Path, mut config: Config, args: AddArgs) 
             return 2;
         }
     };
-    let source_type = requested_source.unwrap_or_else(|| infer_source_type(&url));
-    let label = match resolve_label(cli, &url, source_type, args.label.as_deref()) {
+    let source_type = requested_source.unwrap_or_else(|| infer_source_type(&primary_url));
+    let label = match resolve_label(cli, &primary_url, source_type, args.label.as_deref()) {
         Ok(label) if !label.is_empty() => label,
         Ok(_) => {
             eprintln!("Label cannot be empty.");
@@ -437,7 +372,6 @@ fn handle_add(cli: &Cli, config_path: &Path, mut config: Config, args: AddArgs) 
         }
     };
 
-    let urls = target_urls_for_add(&url, source_type, args.include_all);
     let subdir = if args.subdir {
         true
     } else if confirm_no_default("Store target in subdirectory? [y/N]: ") {
@@ -450,7 +384,6 @@ fn handle_add(cli: &Cli, config_path: &Path, mut config: Config, args: AddArgs) 
         .unwrap_or("auto")
         .to_string();
     let target = Target {
-        url,
         urls,
         mode,
         subdir,
@@ -540,7 +473,9 @@ fn handle_probe(cli: &Cli, config: &Config, args: ProbeArgs) -> i32 {
 
     let mode = target.source_type().name();
     if cli.json {
-        print_json(&serde_json::json!({ "name": args.name, "mode": mode, "url": target.url }));
+        print_json(
+            &serde_json::json!({ "name": args.name, "mode": mode, "url": target.primary_url() }),
+        );
     } else {
         println!("{mode}");
     }
@@ -676,64 +611,6 @@ fn handle_config(cli: &Cli, config_path: &Path, config: Config, args: ConfigComm
     }
 }
 
-fn handle_import_json(cli: &Cli, default_output: &Path, args: ImportJsonArgs) -> i32 {
-    let output_path = args.output.unwrap_or_else(|| default_output.to_path_buf());
-
-    if output_path.exists() && !args.force {
-        eprintln!(
-            "Output config '{}' already exists. Pass --force to overwrite it.",
-            output_path.display()
-        );
-        return 1;
-    }
-
-    let text = match fs::read_to_string(&args.input) {
-        Ok(text) => text,
-        Err(error) => {
-            eprintln!(
-                "Failed to load JSON config from '{}': {error}",
-                args.input.display()
-            );
-            return 1;
-        }
-    };
-
-    let config = match parse_json_config(&text) {
-        Ok(config) => config,
-        Err(error) => {
-            eprintln!(
-                "Failed to parse JSON config from '{}': {error}",
-                args.input.display()
-            );
-            return 1;
-        }
-    };
-
-    match save_config(&output_path, &config) {
-        Ok(()) => {
-            if cli.json {
-                print_json(&serde_json::json!({
-                    "input": args.input,
-                    "output": output_path,
-                    "targets": config.targets.len()
-                }));
-            } else {
-                println!(
-                    "Imported '{}' to '{}' with {} target(s).",
-                    args.input.display(),
-                    output_path.display(),
-                    config.targets.len()
-                );
-            }
-            0
-        }
-        Err(error) => {
-            eprintln!("{error}");
-            1
-        }
-    }
-}
-
 fn parse_source_arg(value: Option<&str>) -> Result<Option<SourceType>, String> {
     match value {
         None => Ok(None),
@@ -742,6 +619,26 @@ fn parse_source_arg(value: Option<&str>) -> Result<Option<SourceType>, String> {
             .map(Some)
             .ok_or_else(|| "Unknown target type. Use 'auto', 'youtube', or 'podcast'.".to_string()),
     }
+}
+
+fn resolve_urls(urls: Vec<String>) -> Vec<String> {
+    let urls = urls
+        .into_iter()
+        .map(|url| url.trim().to_string())
+        .filter(|url| !url.is_empty())
+        .collect::<Vec<_>>();
+
+    if !urls.is_empty() {
+        return urls;
+    }
+
+    let mut urls = vec![prompt_required("URL: ")];
+
+    while confirm_no_default("Add another URL to this target? [y/N]: ") {
+        urls.push(prompt_required("URL: "));
+    }
+
+    urls
 }
 
 fn resolve_label(
@@ -792,26 +689,6 @@ fn resolve_label(
             }
         }
     }
-}
-
-fn target_urls_for_add(
-    url: &str,
-    source_type: SourceType,
-    include_all: bool,
-) -> Option<Vec<String>> {
-    let trimmed = url.trim_end_matches('/');
-    let suffix = "/playlists";
-    if source_type == SourceType::YouTube && trimmed.to_ascii_lowercase().ends_with(suffix) {
-        let base = &trimmed[..trimmed.len() - suffix.len()];
-        if include_all
-            || confirm_no_default(&format!(
-                "Also download '{base}' to capture videos not in a playlist? [y/N]: "
-            ))
-        {
-            return Some(vec![url.to_string(), base.to_string()]);
-        }
-    }
-    None
 }
 
 fn choose_label_from_probe(probe: &ProbeInfo) -> String {
@@ -941,7 +818,7 @@ fn build_ytdlp_sync_args(
             .unwrap_or(&config.default_youtube_template)
             .to_string(),
     ]);
-    args.extend(target.sync_urls());
+    args.extend(target.urls.clone());
     Ok(args)
 }
 
@@ -953,7 +830,7 @@ fn build_podcast_sync_args(config: &Config, target: &Target) -> Result<Vec<Strin
     )?);
     args.extend([
         "--url".to_string(),
-        target.url.clone(),
+        target.primary_url().to_string(),
         "--out-dir".to_string(),
         Path::new(&config.podcast_dir)
             .join("{{podcast_title}}")
@@ -1148,11 +1025,12 @@ fn print_target(name: &str, target: &Target) {
     println!("{name}");
     println!("  Type: {}", target.source_type().name());
     println!("  Mode: {}", target.mode);
-    println!("  URL: {}", target.url);
-    if let Some(urls) = &target.urls {
-        if urls.len() > 1 {
+    match target.urls.as_slice() {
+        [] => println!("  URLs: none"),
+        [url] => println!("  URL: {url}"),
+        urls => {
             for url in urls {
-                println!("  Sync URL: {url}");
+                println!("  URL: {url}");
             }
         }
     }
@@ -1313,180 +1191,19 @@ fn parse_toml_option(value: Option<&str>) -> Result<Option<toml::Value>, String>
 fn parse_config_property(value: Option<&str>) -> Result<ConfigProperty, String> {
     match value.unwrap_or("").trim().to_ascii_lowercase().as_str() {
         "" => Ok(ConfigProperty::All),
-        "base_dir" | "base-dir" | "youtube_dir" | "youtube-dir" => Ok(ConfigProperty::YoutubeDir),
+        "youtube_dir" | "youtube-dir" => Ok(ConfigProperty::YoutubeDir),
         "podcast_dir" | "podcast-dir" => Ok(ConfigProperty::PodcastDir),
-        "default_output_template"
-        | "default-output-template"
-        | "default_youtube_template"
-        | "default-youtube-template" => Ok(ConfigProperty::DefaultYoutubeTemplate),
-        "podcast_template"
-        | "podcast-template"
-        | "default_podcast_template"
-        | "default-podcast-template" => Ok(ConfigProperty::DefaultPodcastTemplate),
+        "default_youtube_template" | "default-youtube-template" => {
+            Ok(ConfigProperty::DefaultYoutubeTemplate)
+        }
+        "default_podcast_template" | "default-podcast-template" => {
+            Ok(ConfigProperty::DefaultPodcastTemplate)
+        }
         "targets" => Ok(ConfigProperty::Targets),
         "yt_dlp" | "yt_dlp_opts" | "yt_dlp_options" | "yt-dlp" => Ok(ConfigProperty::YtDlpOptions),
         "podcast_dl" | "podcast_dl_opts" | "podcast_dl_options" | "podcast-dl"
         | "podcast-dl-options" => Ok(ConfigProperty::PodcastDlOptions),
         unknown => Err(format!("Unknown config property: {unknown}")),
-    }
-}
-
-fn parse_json_config(text: &str) -> Result<Config, String> {
-    let root: JsonValue = serde_json::from_str(text).map_err(|error| error.to_string())?;
-    let defaults = Config::default();
-
-    let youtube_dir = json_get_string(&root, &["base_dir", "youtube_dir", "baseDir", "youtubeDir"])
-        .unwrap_or(defaults.youtube_dir);
-    let podcast_dir =
-        json_get_string(&root, &["podcast_dir", "podcastDir"]).unwrap_or(defaults.podcast_dir);
-    let default_youtube_template = json_get_string(
-        &root,
-        &[
-            "default_output_template",
-            "defaultOutputTemplate",
-            "defaultYoutubeTemplate",
-            "default_youtube_template",
-        ],
-    )
-    .unwrap_or(defaults.default_youtube_template);
-    let default_podcast_template = json_get_string(
-        &root,
-        &["default_podcast_template", "defaultPodcastTemplate"],
-    )
-    .unwrap_or(defaults.default_podcast_template);
-
-    let mut targets = parse_json_targets(&root);
-    if targets.is_empty() {
-        targets = parse_legacy_json_entries(&root);
-    }
-
-    Ok(Config {
-        youtube_dir,
-        podcast_dir,
-        default_youtube_template,
-        default_podcast_template,
-        targets,
-        yt_dlp_options: json_get_option_array(&root, &["yt_dlp", "yt_dlp_opts", "ytDlp"]),
-        podcast_dl_options: json_get_option_array(
-            &root,
-            &[
-                "podcast_dl",
-                "podcast-dl",
-                "podcastDL",
-                "podcast_dl_opts",
-                "podcast_dl_options",
-            ],
-        ),
-    })
-}
-
-fn parse_json_targets(root: &JsonValue) -> HashMap<String, Target> {
-    root.get("targets")
-        .and_then(JsonValue::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| {
-                    let name = json_get_string(item, &["name"])?;
-                    let url = json_get_string(item, &["url"])?;
-                    let target = Target {
-                        url,
-                        urls: json_get_string_list(item, &["urls"]),
-                        mode: json_get_string(item, &["mode"]).unwrap_or_else(default_mode),
-                        subdir: json_get_subdir(item),
-                        output_template: json_get_string(
-                            item,
-                            &["output_template", "outputTemplate"],
-                        ),
-                    };
-                    Some((name, target))
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn parse_legacy_json_entries(root: &JsonValue) -> HashMap<String, Target> {
-    root.get("entries")
-        .and_then(JsonValue::as_object)
-        .map(|entries| {
-            entries
-                .iter()
-                .filter_map(|(name, item)| {
-                    let url = json_get_string(item, &["url"])?;
-                    Some((
-                        name.clone(),
-                        Target {
-                            url,
-                            urls: None,
-                            mode: json_get_string(item, &["sourceType", "source_type"])
-                                .unwrap_or_else(|| "youtube".to_string()),
-                            subdir: false,
-                            output_template: json_get_string(
-                                item,
-                                &["outputTemplate", "output_template"],
-                            ),
-                        },
-                    ))
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn json_get_string(root: &JsonValue, names: &[&str]) -> Option<String> {
-    names.iter().find_map(|name| {
-        root.get(*name)
-            .and_then(JsonValue::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned)
-    })
-}
-
-fn json_get_string_list(root: &JsonValue, names: &[&str]) -> Option<Vec<String>> {
-    let urls: Vec<String> = names
-        .iter()
-        .find_map(|name| root.get(*name).and_then(JsonValue::as_array))
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(JsonValue::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(ToOwned::to_owned)
-                .collect()
-        })
-        .unwrap_or_default();
-
-    if urls.is_empty() { None } else { Some(urls) }
-}
-
-fn json_get_subdir(root: &JsonValue) -> bool {
-    match root.get("subdir") {
-        Some(JsonValue::Bool(value)) => *value,
-        Some(JsonValue::String(value)) => !value.trim().is_empty(),
-        _ => false,
-    }
-}
-
-fn json_get_option_array(root: &JsonValue, names: &[&str]) -> Option<toml::Value> {
-    let values: Vec<_> = names
-        .iter()
-        .find_map(|name| root.get(*name).and_then(JsonValue::as_array))
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(JsonValue::as_str)
-                .map(|value| toml::Value::String(value.to_string()))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    if values.is_empty() {
-        None
-    } else {
-        Some(toml::Value::Array(values))
     }
 }
 
@@ -1497,7 +1214,6 @@ fn load_config(path: &Path) -> Result<Config, String> {
     let text = fs::read_to_string(path)
         .map_err(|error| format!("Failed to load config from '{}': {error}", path.display()))?;
     let mut config: Config = toml::from_str(&text)
-        .or_else(|_| parse_legacy_toml_config(&text))
         .map_err(|error| format!("Failed to parse config from '{}': {error}", path.display()))?;
     let defaults = Config::default();
     if config.youtube_dir.trim().is_empty() {
@@ -1507,41 +1223,6 @@ fn load_config(path: &Path) -> Result<Config, String> {
         config.podcast_dir = defaults.podcast_dir;
     }
     Ok(config)
-}
-
-#[derive(Deserialize)]
-struct LegacyTomlConfig {
-    #[serde(default = "default_youtube_dir_string")]
-    youtube_dir: String,
-    #[serde(default = "default_podcast_dir_string")]
-    podcast_dir: String,
-    #[serde(default = "default_youtube_template")]
-    default_youtube_template: String,
-    #[serde(default = "default_podcast_template")]
-    default_podcast_template: String,
-    #[serde(default)]
-    targets: Vec<NamedTarget>,
-    #[serde(default)]
-    yt_dlp_options: Option<toml::Value>,
-    #[serde(default)]
-    podcast_dl_options: Option<toml::Value>,
-}
-
-fn parse_legacy_toml_config(text: &str) -> Result<Config, toml::de::Error> {
-    let legacy: LegacyTomlConfig = toml::from_str(text)?;
-    Ok(Config {
-        youtube_dir: legacy.youtube_dir,
-        podcast_dir: legacy.podcast_dir,
-        default_youtube_template: legacy.default_youtube_template,
-        default_podcast_template: legacy.default_podcast_template,
-        targets: legacy
-            .targets
-            .into_iter()
-            .map(|named| (named.name, named.target))
-            .collect(),
-        yt_dlp_options: legacy.yt_dlp_options,
-        podcast_dl_options: legacy.podcast_dl_options,
-    })
 }
 
 fn save_config(path: &Path, config: &Config) -> Result<(), String> {
@@ -1566,10 +1247,10 @@ fn print_toml_option(value: Option<&toml::Value>) {
     }
 }
 
-fn toml_value_to_json(value: Option<&toml::Value>) -> JsonValue {
+fn toml_value_to_json(value: Option<&toml::Value>) -> serde_json::Value {
     match value {
-        Some(value) => serde_json::to_value(value).unwrap_or(JsonValue::Null),
-        None => JsonValue::Null,
+        Some(value) => serde_json::to_value(value).unwrap_or(serde_json::Value::Null),
+        None => serde_json::Value::Null,
     }
 }
 
@@ -1749,8 +1430,7 @@ mod tests {
             ..Config::default()
         };
         let target = Target {
-            url: "https://www.youtube.com/example".to_string(),
-            urls: None,
+            urls: vec!["https://www.youtube.com/example".to_string()],
             mode: "youtube".to_string(),
             subdir: false,
             output_template: None,
@@ -1773,8 +1453,7 @@ mod tests {
             ..Config::default()
         };
         let target = Target {
-            url: "https://example.com/feed.xml".to_string(),
-            urls: None,
+            urls: vec!["https://example.com/feed.xml".to_string()],
             mode: "podcast".to_string(),
             subdir: false,
             output_template: None,

@@ -60,21 +60,20 @@ default_youtube_template = "%(playlist)s/%(upload_date>%Y-%m-%d)s - %(title)s.%(
 default_podcast_template = "{{release_year}}-{{release_month}}-{{release_day}} - {{title}}"
 
 [targets.youtube-linux]
-url = "https://www.youtube.com/example"
+urls = ["https://www.youtube.com/example"]
 mode = "youtube"
 subdir = true
 
 [targets.my-podcast]
-url = "https://example.com/feed.xml"
+urls = ["https://example.com/feed.xml"]
 mode = "podcast"
 subdir = true
 ```
 
-For a YouTube channel playlists URL, a target may store multiple sync URLs:
+Targets may store one or more URLs:
 
 ```toml
 [targets.example]
-url = "https://www.youtube.com/@example/playlists"
 urls = [
   "https://www.youtube.com/@example/playlists",
   "https://www.youtube.com/@example",
@@ -100,7 +99,7 @@ Target management:
 ```bash
 archivist add --url https://www.youtube.com/example --label youtube-linux --type youtube
 archivist add --url https://www.youtube.com/example --label youtube-linux --type youtube --subdir
-archivist add --url https://www.youtube.com/@example/playlists --label example --type youtube --include-all
+archivist add --url https://www.youtube.com/@example/playlists --url https://www.youtube.com/@example --label example --type youtube
 archivist add --url https://example.com/feed.xml --label my-podcast --type podcast
 archivist add --url https://example.com/feed.xml --type podcast --output "{{title}}"
 archivist list
@@ -109,9 +108,7 @@ archivist remove my-podcast
 archivist remove my-podcast --delete-archive
 ```
 
-If `--label` is omitted, Archivist probes the source and prompts for a label. YouTube labels are probed with `yt-dlp --dump-json`; podcast labels are probed with `deno x podcast-dl --info`. `add` prompts whether to store downloads in a target subdirectory unless `--subdir` is passed.
-
-When adding a YouTube target whose URL ends in `/playlists`, Archivist asks whether to also store the URL without that suffix on the same target. `--include-all` answers yes without prompting. Sync passes all stored target URLs to `yt-dlp` with the same download archive file.
+If `--label` is omitted, Archivist probes the first URL and prompts for a label. YouTube labels are probed with `yt-dlp --dump-json`; podcast labels are probed with `deno x podcast-dl --info`. `add` prompts whether to store downloads in a target subdirectory unless `--subdir` is passed. When no `--url` is supplied, interactive add asks whether to add another URL to the target.
 
 Sync:
 
@@ -135,27 +132,17 @@ archivist config set default_podcast_template "{{release_year}}-{{release_month}
 archivist config set yt_dlp_options '["--ignore-errors", "--no-warnings"]'
 archivist config set podcast_dl_options '["--debug"]'
 archivist config set podcast_dl_options
-archivist import-json ./old-config.json --output ./config.toml
 ```
 
 Passing no value to `yt_dlp_options`, `podcast_dl_options`, or `targets` clears that property. Directory properties require a value.
 
-Import an old JSON config:
-
-```bash
-archivist import-json ~/.config/archivist/config.json --output ~/.config/archivist/config.toml
-archivist --config-file ./config.toml import-json ./config.json --force
-```
-
-If `--output` is omitted, `import-json` writes to the global `--config-file` path, or the default `~/.config/archivist/config.toml`. Existing output files are not overwritten unless `--force` is passed.
-
 Recognized config property aliases include:
 
 ```text
-youtube_dir, youtube-dir, base_dir, base-dir
+youtube_dir, youtube-dir
 podcast_dir, podcast-dir
-default_youtube_template, default-youtube-template, default_output_template
-default_podcast_template, default-podcast-template, podcast_template
+default_youtube_template, default-youtube-template
+default_podcast_template, default-podcast-template
 targets
 yt_dlp_options, yt_dlp_opts, yt_dlp, yt-dlp
 podcast_dl_options, podcast_dl_opts, podcast_dl, podcast-dl

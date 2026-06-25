@@ -37,10 +37,9 @@ Implemented commands:
 list
 config show [property]
 config set <property> [value]
-import-json <input> [--output PATH] [--force]
 probe <name>
 sync [--all|name]
-add [--url URL] [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir] [--include-all]
+add [--url URL]... [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir]
 remove <name> [--delete-archive]
 ```
 
@@ -53,11 +52,9 @@ Implemented global options:
 --version, -v
 ```
 
-`sync` with no target means all targets. `add` may prompt for URL, output template, label, playlist expansion, and subdirectory behavior when options are omitted. `--subdir` stores the target under a key-named subdirectory by setting `subdir = true`. `--include-all` stores the URL without `/playlists` for matching YouTube playlist collection URLs.
+`sync` with no target means all targets. `add` may prompt for URL, output template, label, and subdirectory behavior when options are omitted. `--url` may be supplied multiple times. In interactive mode, `add` asks whether to add another URL to the target. `--subdir` stores the target under a key-named subdirectory by setting `subdir = true`.
 
-`import-json` converts the old Archivist JSON config to the current TOML shape. It supports the recent `targets` array shape and the legacy `entries` object shape, and writes targets as a name-keyed TOML table.
-
-## Config Compatibility
+## Config Shape
 
 Current TOML config fields:
 

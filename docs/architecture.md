@@ -35,7 +35,7 @@ CLI argv
 The Rust domain model defines:
 
 * `SourceType` with `YouTube` and `Podcast`.
-* `Target`, keyed by target name, including `url`, optional `urls`, `mode`, boolean `subdir`, and `output_template`.
+* `Target`, keyed by target name, including `urls`, `mode`, boolean `subdir`, and `output_template`.
 * `Config`, including YouTube and podcast roots, default templates, targets, and optional TOML option blocks.
 * `ProcessResult` for external process outcomes.
 
@@ -72,7 +72,7 @@ default_youtube_template = "..."
 default_podcast_template = "..."
 
 [targets.example]
-url = "..."
+urls = ["..."]
 mode = "youtube"
 subdir = true
 ```
@@ -107,7 +107,7 @@ The archive file for a YouTube target is:
 <youtube_dir>/<label>/.download-archive.txt
 ```
 
-If a YouTube add URL ends in `/playlists`, Archivist can store both the original URL and the URL without `/playlists` under the same target key. Sync passes all stored URLs to one yt-dlp invocation sharing the same archive file.
+Targets can store one or more URLs. Sync passes all stored YouTube URLs to one yt-dlp invocation sharing the same archive file.
 
 ## podcast-dl Integration
 
@@ -142,10 +142,9 @@ Implemented commands:
 list
 config show [property]
 config set <property> [value]
-import-json <input> [--output PATH] [--force]
 probe <name>
 sync [--all|name]
-add [--url URL] [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir] [--include-all]
+add [--url URL]... [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir]
 remove <name> [--delete-archive]
 ```
 
