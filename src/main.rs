@@ -1,4 +1,5 @@
 mod config;
+mod input;
 mod paths;
 mod podcast_dl;
 mod process;
@@ -11,13 +12,16 @@ use config::{
     ConfigAction, ConfigCommand, ConfigProperty, load_config, parse_config_property, print_json,
     save_config, set_config_property, show_config_property,
 };
+use input::{confirm_no_default, confirm_yes_default, prompt, prompt_optional, prompt_required};
 use paths::{
     config_file, logs_directory, podcast_archive_template, sync_log_file, youtube_archive_file,
 };
 use process::run_process_with_log;
+use std::env;
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
+use std::process::Command as ProcessCommand;
 use types::{Config, ProbeInfo, ProcessResult, SourceType, Target, infer_source_type};
 use util::{format_command, log_info, sanitize_label};
 
@@ -117,6 +121,15 @@ fn run(cli: Cli) -> i32 {
         return 0;
     };
 
+    if matches!(
+        command,
+        Commands::Config(ConfigCommand {
+            action: ConfigAction::Edit
+        })
+    ) {
+        return handle_edit_config(&config_path);
+    }
+
     log_info(
         cli.quiet,
         &format!("Loading config from {}", config_path.display()),
@@ -156,6 +169,107 @@ fn handle_default_config(config_path: &Path) -> i32 {
             eprintln!("{error}");
             1
         }
+    }
+}
+
+fn handle_edit_config(config_path: &Path) -> i32 {
+    if !config_path.exists() {
+        let config = Config::default();
+        if let Err(error) = save_config(config_path, &config) {
+            eprintln!("{error}");
+            return 1;
+        }
+        println!("Created new default config at '{}'.", config_path.display());
+    }
+
+    println!("Opening config '{}'.", config_path.display());
+    match open_config_editor(config_path) {
+        Ok(()) => 0,
+        Err(error) => {
+            eprintln!("{error}");
+            1
+        }
+    }
+}
+
+fn open_config_editor(config_path: &Path) -> Result<(), String> {
+    if let Some(editor) = env::var_os("VISUAL")
+        .filter(|value| !value.is_empty())
+        .or_else(|| env::var_os("EDITOR").filter(|value| !value.is_empty()))
+    {
+        return run_editor_command(&editor.to_string_lossy(), config_path);
+    }
+
+    run_system_editor(config_path)
+}
+
+#[cfg(unix)]
+fn run_editor_command(editor: &str, config_path: &Path) -> Result<(), String> {
+    let status = ProcessCommand::new("sh")
+        .arg("-c")
+        .arg("exec $0 \"$1\"")
+        .arg(editor)
+        .arg(config_path)
+        .status()
+        .map_err(|error| format!("Failed to run editor '{editor}': {error}"))?;
+
+    editor_status_result(editor, status)
+}
+
+#[cfg(windows)]
+fn run_editor_command(editor: &str, config_path: &Path) -> Result<(), String> {
+    let command = format!("{editor} \"{}\"", config_path.display());
+    let status = ProcessCommand::new("cmd")
+        .args(["/C", &command])
+        .status()
+        .map_err(|error| format!("Failed to run editor '{editor}': {error}"))?;
+
+    editor_status_result(editor, status)
+}
+
+#[cfg(target_os = "macos")]
+fn run_system_editor(config_path: &Path) -> Result<(), String> {
+    let status = ProcessCommand::new("open")
+        .arg("-t")
+        .arg(config_path)
+        .status()
+        .map_err(|error| format!("Failed to open system text editor: {error}"))?;
+
+    editor_status_result("open -t", status)
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn run_system_editor(config_path: &Path) -> Result<(), String> {
+    let status = ProcessCommand::new("xdg-open")
+        .arg(config_path)
+        .status()
+        .map_err(|error| {
+            format!(
+                "Failed to open system editor. Set VISUAL or EDITOR, or install xdg-open: {error}"
+            )
+        })?;
+
+    editor_status_result("xdg-open", status)
+}
+
+#[cfg(windows)]
+fn run_system_editor(config_path: &Path) -> Result<(), String> {
+    let status = ProcessCommand::new("cmd")
+        .args(["/C", "start", "", &config_path.display().to_string()])
+        .status()
+        .map_err(|error| format!("Failed to open system editor: {error}"))?;
+
+    editor_status_result("start", status)
+}
+
+fn editor_status_result(editor: &str, status: std::process::ExitStatus) -> Result<(), String> {
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Editor command '{editor}' exited with status {}.",
+            status.code().unwrap_or(1)
+        ))
     }
 }
 
@@ -388,6 +502,7 @@ fn handle_sync(cli: &Cli, config: &Config, args: SyncArgs) -> i32 {
 
 fn handle_config(cli: &Cli, config_path: &Path, config: Config, args: ConfigCommand) -> i32 {
     match args.action {
+        ConfigAction::Edit => unreachable!("config edit is handled before config loading"),
         ConfigAction::Show { property } => match parse_config_property(property.as_deref()) {
             Ok(property) => {
                 show_config_property(cli.json, &config, property);
@@ -618,54 +733,5 @@ fn print_target(name: &str, target: &Target) {
     match &target.output_template {
         Some(template) => println!("  Output: {template}"),
         None => println!("  Output: default"),
-    }
-}
-
-fn prompt(message: &str) -> Option<String> {
-    print!("{message}");
-    io::stdout().flush().ok()?;
-    let mut line = String::new();
-    match io::stdin().read_line(&mut line) {
-        Ok(0) => None,
-        Ok(_) => Some(line.trim_end_matches(['\r', '\n']).to_string()),
-        Err(_) => None,
-    }
-}
-
-fn prompt_required(message: &str) -> String {
-    loop {
-        if let Some(value) = prompt(message) {
-            let value = value.trim();
-            if !value.is_empty() {
-                return value.to_string();
-            }
-        }
-    }
-}
-
-fn prompt_optional(message: &str) -> Option<String> {
-    prompt(message).and_then(|value| {
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        }
-    })
-}
-
-fn confirm_yes_default(message: &str) -> bool {
-    match prompt(message) {
-        None => true,
-        Some(value) if value.trim().is_empty() => true,
-        Some(value) => matches!(value.trim().to_ascii_lowercase().as_str(), "y" | "yes"),
-    }
-}
-
-fn confirm_no_default(message: &str) -> bool {
-    match prompt(message) {
-        None => false,
-        Some(value) if value.trim().is_empty() => false,
-        Some(value) => matches!(value.trim().to_ascii_lowercase().as_str(), "y" | "yes"),
     }
 }

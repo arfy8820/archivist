@@ -11,6 +11,7 @@ The current repo is a Cargo binary crate. It uses `yt-dlp` for YouTube-style sou
 ```text
 Cargo.toml          Package metadata and dependencies
 src/main.rs         CLI parser, prompts, rendering, and command handlers
+src/input.rs        Interactive input with readline editing and stdin fallback
 src/types.rs        Domain model and defaults
 src/config.rs       TOML config loading, saving, and config command helpers
 src/yt_dlp.rs       yt-dlp probing, playlist URL expansion, and sync arguments
@@ -44,6 +45,7 @@ Implemented commands:
 list
 config show [property]
 config set <property> [value]
+config edit
 probe <name>
 sync [--all|name]
 add [--url URL]... [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir] [--include-all]

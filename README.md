@@ -134,9 +134,12 @@ archivist config set default_podcast_template "{{release_year}}-{{release_month}
 archivist config set yt_dlp_options '["--ignore-errors", "--no-warnings"]'
 archivist config set podcast_dl_options '["--debug"]'
 archivist config set podcast_dl_options
+archivist config edit
 ```
 
 Passing no value to `yt_dlp_options`, `podcast_dl_options`, or `targets` clears that property. Directory properties require a value.
+
+`config edit` opens the config file in `$VISUAL` or `$EDITOR` if set. Otherwise, Archivist falls back to the platform text editor opener.
 
 Recognized config property aliases include:
 
@@ -191,6 +194,7 @@ The code is organized as a compact Rust project:
 ```text
 Cargo.toml          Package metadata and dependencies
 src/main.rs         CLI parser, prompts, rendering, and command handlers
+src/input.rs        Interactive input with readline editing and stdin fallback
 src/types.rs        Domain model and defaults
 src/config.rs       TOML config loading, saving, and config command helpers
 src/yt_dlp.rs       yt-dlp probing, playlist URL expansion, and sync arguments

@@ -7,6 +7,7 @@ Archivist is currently one Rust binary crate split into focused modules:
 ```text
 Cargo.toml
 src/main.rs         CLI parser, prompts, rendering, and command handlers
+src/input.rs        Interactive input with readline editing and stdin fallback
 src/types.rs        Domain model and defaults
 src/config.rs       TOML config loading, saving, and config command helpers
 src/yt_dlp.rs       yt-dlp probing, playlist URL expansion, and sync arguments
@@ -16,7 +17,7 @@ src/paths.rs        Config, archive, and log path helpers
 src/util.rs         Small formatting and label helpers
 ```
 
-The project uses `clap` for CLI parsing, `serde` for serialization, `toml` for config persistence, `serde_json` for JSON output and yt-dlp probe parsing, and `std::process::Command` for external tools. Unit tests live beside the config, downloader, and process helpers they cover.
+The project uses `clap` for CLI parsing, `rustyline` for editable interactive prompts, `serde` for serialization, `toml` for config persistence, `serde_json` for JSON output and yt-dlp probe parsing, and `std::process::Command` for external tools. Unit tests live beside the config, downloader, and process helpers they cover.
 
 ## Implemented Data Flow
 
@@ -147,6 +148,7 @@ Implemented commands:
 list
 config show [property]
 config set <property> [value]
+config edit
 probe <name>
 sync [--all|name]
 add [--url URL]... [--label LABEL] [--output TEMPLATE] [--type auto|youtube|podcast] [--subdir] [--include-all]
@@ -162,7 +164,7 @@ Implemented global options:
 --version, -v
 ```
 
-JSON output is implemented for `list`, `config show`, and `probe`. Sync still prints human-readable process status and streams subprocess output to process logs.
+JSON output is implemented for `list`, `config show`, and `probe`. `config edit` opens the config without parsing it first, so it can be used to repair invalid TOML. Sync still prints human-readable process status and streams subprocess output to process logs.
 
 ## Error Handling
 

@@ -1,7 +1,7 @@
 use crate::types::{Config, Target};
 use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 
@@ -14,6 +14,7 @@ pub enum ConfigAction {
         property: String,
         value: Vec<String>,
     },
+    Edit,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -36,7 +37,20 @@ pub enum ConfigProperty {
 
 #[derive(Serialize)]
 struct TargetsToml<'a> {
-    targets: &'a HashMap<String, Target>,
+    targets: BTreeMap<&'a String, &'a Target>,
+}
+
+#[derive(Serialize)]
+struct ConfigToml<'a> {
+    youtube_dir: &'a str,
+    podcast_dir: &'a str,
+    default_youtube_template: &'a str,
+    default_podcast_template: &'a str,
+    targets: BTreeMap<&'a String, &'a Target>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    yt_dlp_options: &'a Option<toml::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    podcast_dl_options: &'a Option<toml::Value>,
 }
 
 #[derive(Deserialize)]
@@ -71,7 +85,7 @@ pub fn save_config(path: &Path, config: &Config) -> Result<(), String> {
             )
         })?;
     }
-    let text = toml::to_string_pretty(config)
+    let text = toml::to_string_pretty(&ConfigToml::from(config))
         .map_err(|error| format!("Failed to serialize config: {error}"))?;
     fs::write(path, text)
         .map_err(|error| format!("Failed to save config to '{}': {error}", path.display()))
@@ -143,7 +157,7 @@ pub fn show_config_property(json: bool, config: &Config, property: ConfigPropert
             ConfigProperty::Targets => println!(
                 "{}",
                 toml::to_string_pretty(&TargetsToml {
-                    targets: &config.targets
+                    targets: sorted_targets(&config.targets)
                 })
                 .unwrap_or_default()
             ),
@@ -282,6 +296,24 @@ fn toml_value_to_json(value: Option<&toml::Value>) -> serde_json::Value {
     }
 }
 
+impl<'a> From<&'a Config> for ConfigToml<'a> {
+    fn from(config: &'a Config) -> Self {
+        Self {
+            youtube_dir: &config.youtube_dir,
+            podcast_dir: &config.podcast_dir,
+            default_youtube_template: &config.default_youtube_template,
+            default_podcast_template: &config.default_podcast_template,
+            targets: sorted_targets(&config.targets),
+            yt_dlp_options: &config.yt_dlp_options,
+            podcast_dl_options: &config.podcast_dl_options,
+        }
+    }
+}
+
+fn sorted_targets(targets: &HashMap<String, Target>) -> BTreeMap<&String, &Target> {
+    targets.iter().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,5 +337,43 @@ mod tests {
                 "--debug".to_string()
             )]))
         );
+    }
+
+    #[test]
+    fn save_config_sorts_targets_alphabetically() {
+        let path = std::env::temp_dir().join(format!(
+            "archivist-sorted-targets-{}-{}.toml",
+            std::process::id(),
+            chrono::Local::now()
+                .timestamp_nanos_opt()
+                .unwrap_or_default()
+        ));
+        let mut config = Config::default();
+        config.targets.insert(
+            "zeta".to_string(),
+            Target {
+                urls: vec!["https://example.com/zeta".to_string()],
+                source: "youtube".to_string(),
+                subdir: false,
+                output_template: None,
+            },
+        );
+        config.targets.insert(
+            "alpha".to_string(),
+            Target {
+                urls: vec!["https://example.com/alpha".to_string()],
+                source: "youtube".to_string(),
+                subdir: false,
+                output_template: None,
+            },
+        );
+
+        save_config(&path, &config).expect("config should save");
+        let text = fs::read_to_string(&path).expect("config should be readable");
+        let _ = fs::remove_file(&path);
+
+        let alpha = text.find("[targets.alpha]").expect("alpha target");
+        let zeta = text.find("[targets.zeta]").expect("zeta target");
+        assert!(alpha < zeta);
     }
 }
