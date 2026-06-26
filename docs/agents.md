@@ -42,7 +42,7 @@ Keep core behavior independent from the user interface where practical.
 Implemented commands:
 
 ```text
-list
+list [--all|name]
 config show [property]
 config set <property> [value]
 config edit
@@ -61,7 +61,7 @@ Implemented global options:
 --version, -v
 ```
 
-`sync` with no target means all targets. `add` may prompt for URL, output template, label, YouTube playlist expansion, and subdirectory behavior when options are omitted. `--url` may be supplied multiple times. In interactive mode, `add` asks whether to add another URL to the target. `--subdir` stores the target under a key-named subdirectory by setting `subdir = true`. `--include-all` adds the base URL for YouTube URLs ending in `/playlists` without prompting.
+`list` and `sync` with no target mean all targets. `list <name>` lists one target; `list --all` explicitly lists all targets. `add` may prompt for URL, output template, label, YouTube playlist expansion, and subdirectory behavior when options are omitted. `--url` may be supplied multiple times. In interactive mode, `add` asks whether to add another URL to the target. `--subdir` stores the target under a key-named subdirectory by setting `subdir = true`. `--include-all` adds the base URL for YouTube URLs ending in `/playlists` without prompting.
 
 ## Config Shape
 

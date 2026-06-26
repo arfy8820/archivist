@@ -381,13 +381,35 @@ fn handle_remove(config_path: &Path, mut config: Config, args: RemoveArgs) -> i3
 }
 
 fn handle_list(cli: &Cli, config: &Config, args: ListArgs) -> i32 {
+    if args.all && args.name.is_some() {
+        eprintln!("Use either 'list --all' or 'list <name>', not both.");
+        return 2;
+    }
+
+    let entries: Vec<(&String, &Target)> = match args.name.as_ref() {
+        Some(label) => match config.targets.get_key_value(label) {
+            Some(entry) => vec![entry],
+            None => {
+                eprintln!("No entry found for label '{label}'.");
+                return 1;
+            }
+        },
+        None => {
+            let mut entries: Vec<_> = config.targets.iter().collect();
+            entries.sort_by(|left, right| left.0.cmp(right.0));
+            entries
+        }
+    };
+
     if cli.json {
-        print_json(&config.targets);
-    } else if config.targets.is_empty() {
+        print_json(
+            &entries
+                .into_iter()
+                .collect::<std::collections::BTreeMap<_, _>>(),
+        );
+    } else if entries.is_empty() {
         println!("No archive mappings configured.");
     } else {
-        let mut entries: Vec<_> = config.targets.iter().collect();
-        entries.sort_by(|left, right| left.0.cmp(right.0));
         for (name, target) in entries {
             print_target(name, target);
         }

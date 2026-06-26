@@ -145,7 +145,7 @@ The podcast archive template is:
 Implemented commands:
 
 ```text
-list
+list [--all|name]
 config show [property]
 config set <property> [value]
 config edit

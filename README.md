@@ -103,10 +103,14 @@ archivist add --url https://www.youtube.com/@example/playlists --label example -
 archivist add --url https://example.com/feed.xml --label my-podcast --type podcast
 archivist add --url https://example.com/feed.xml --type podcast --output "{{title}}"
 archivist list
+archivist list --all
+archivist list my-podcast
 archivist probe my-podcast
 archivist remove my-podcast
 archivist remove my-podcast --delete-archive
 ```
+
+`list` without a target lists all configured targets. `list <target>` lists one target, and `list --all` explicitly lists all targets.
 
 If `--label` is omitted, Archivist probes the first URL and prompts for a label. YouTube labels are probed with `yt-dlp --dump-json`; podcast labels are probed with `deno x podcast-dl --info`. `add` prompts whether to store downloads in a target subdirectory unless `--subdir` is passed. When no `--url` is supplied, interactive add asks whether to add another URL to the target.
 
