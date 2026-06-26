@@ -27,9 +27,9 @@ pub fn youtube_archive_file(config: &Config, label: &str) -> PathBuf {
         .join(".download-archive.txt")
 }
 
-pub fn podcast_archive_template(config: &Config) -> PathBuf {
+pub fn podcast_archive_file(config: &Config, label: &str) -> PathBuf {
     Path::new(&config.podcast_dir)
-        .join("{{podcast_title}}")
+        .join(label)
         .join("archive.json")
 }
 

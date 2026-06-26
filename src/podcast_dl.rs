@@ -1,5 +1,5 @@
 use crate::config::config_option_args;
-use crate::paths::podcast_archive_template;
+use crate::paths::podcast_archive_file;
 use crate::process::run_process;
 use crate::types::{Config, Target};
 use std::path::Path;
@@ -28,7 +28,7 @@ pub fn probe_label(url: &str) -> Result<String, String> {
         .ok_or_else(|| "podcast-dl --info did not return a podcast title.".to_string())
 }
 
-pub fn build_sync_args(config: &Config, target: &Target) -> Result<Vec<String>, String> {
+pub fn build_sync_args(config: &Config, label: &str, target: &Target) -> Result<Vec<String>, String> {
     let mut args = vec!["x".to_string(), "podcast-dl".to_string()];
     args.extend(config_option_args(
         &config.podcast_dl_options,
@@ -39,7 +39,7 @@ pub fn build_sync_args(config: &Config, target: &Target) -> Result<Vec<String>, 
         target.primary_url().to_string(),
         "--out-dir".to_string(),
         Path::new(&config.podcast_dir)
-            .join("{{podcast_title}}")
+            .join(label)
             .to_string_lossy()
             .into_owned(),
         "--threads".to_string(),
@@ -52,7 +52,7 @@ pub fn build_sync_args(config: &Config, target: &Target) -> Result<Vec<String>, 
             .unwrap_or(&config.default_podcast_template)
             .to_string(),
         "--archive".to_string(),
-        podcast_archive_template(config)
+        podcast_archive_file(config, label)
             .to_string_lossy()
             .into_owned(),
         "--include-meta".to_string(),
@@ -81,7 +81,7 @@ mod tests {
             output_template: None,
         };
 
-        let args = build_sync_args(&config, &target).expect("valid options");
+        let args = build_sync_args(&config, "test-podcast", &target).expect("valid options");
 
         assert_eq!(args[0], "x");
         assert_eq!(args[1], "podcast-dl");

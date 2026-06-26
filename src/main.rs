@@ -14,7 +14,7 @@ use config::{
 };
 use input::{confirm_no_default, confirm_yes_default, prompt, prompt_optional, prompt_required};
 use paths::{
-    config_file, logs_directory, podcast_archive_template, sync_log_file, youtube_archive_file,
+    config_file, logs_directory, podcast_archive_file, sync_log_file, youtube_archive_file,
 };
 use process::run_process_with_log;
 use std::env;
@@ -203,24 +203,9 @@ fn open_config_editor(config_path: &Path) -> Result<(), String> {
     run_system_editor(config_path)
 }
 
-#[cfg(unix)]
 fn run_editor_command(editor: &str, config_path: &Path) -> Result<(), String> {
-    let status = ProcessCommand::new("sh")
-        .arg("-c")
-        .arg("exec $0 \"$1\"")
-        .arg(editor)
+    let status = ProcessCommand::new(editor)
         .arg(config_path)
-        .status()
-        .map_err(|error| format!("Failed to run editor '{editor}': {error}"))?;
-
-    editor_status_result(editor, status)
-}
-
-#[cfg(windows)]
-fn run_editor_command(editor: &str, config_path: &Path) -> Result<(), String> {
-    let command = format!("{editor} \"{}\"", config_path.display());
-    let status = ProcessCommand::new("cmd")
-        .args(["/C", &command])
         .status()
         .map_err(|error| format!("Failed to run editor '{editor}': {error}"))?;
 
@@ -366,7 +351,7 @@ fn handle_remove(config_path: &Path, mut config: Config, args: RemoveArgs) -> i3
         .unwrap_or(SourceType::YouTube)
     {
         SourceType::YouTube => youtube_archive_file(&config, &args.name),
-        SourceType::Podcast => podcast_archive_template(&config),
+        SourceType::Podcast => podcast_archive_file(&config, &args.name),
     };
 
     match fs::remove_file(&archive_path) {
@@ -466,7 +451,7 @@ fn handle_sync(cli: &Cli, config: &Config, args: SyncArgs) -> i32 {
                     continue;
                 }
             },
-            SourceType::Podcast => match podcast_dl::build_sync_args(config, &target) {
+            SourceType::Podcast => match podcast_dl::build_sync_args(config, &name, &target) {
                 Ok(args) => ("deno", args),
                 Err(error) => {
                     eprintln!("{error}");
