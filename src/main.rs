@@ -50,7 +50,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug, Clone)]
 enum Commands {
-    List,
+    List(ListArgs),
     Add(AddArgs),
     Remove(RemoveArgs),
     Sync(SyncArgs),
@@ -83,6 +83,13 @@ struct RemoveArgs {
 
 #[derive(Args, Debug, Clone)]
 struct SyncArgs {
+    name: Option<String>,
+    #[arg(long)]
+    all: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+struct ListArgs {
     name: Option<String>,
     #[arg(long)]
     all: bool,
@@ -144,7 +151,7 @@ fn run(cli: Cli) -> i32 {
     };
 
     match command {
-        Commands::List => handle_list(&cli, &config),
+        Commands::List(args) => handle_list(&cli, &config, args),
         Commands::Add(args) => handle_add(&cli, &config_path, config, args),
         Commands::Remove(args) => handle_remove(&config_path, config, args),
         Commands::Sync(args) => handle_sync(&cli, &config, args),
@@ -373,7 +380,7 @@ fn handle_remove(config_path: &Path, mut config: Config, args: RemoveArgs) -> i3
     }
 }
 
-fn handle_list(cli: &Cli, config: &Config) -> i32 {
+fn handle_list(cli: &Cli, config: &Config, args: ListArgs) -> i32 {
     if cli.json {
         print_json(&config.targets);
     } else if config.targets.is_empty() {
