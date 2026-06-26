@@ -28,7 +28,11 @@ pub fn probe_label(url: &str) -> Result<String, String> {
         .ok_or_else(|| "podcast-dl --info did not return a podcast title.".to_string())
 }
 
-pub fn build_sync_args(config: &Config, label: &str, target: &Target) -> Result<Vec<String>, String> {
+pub fn build_sync_args(
+    config: &Config,
+    label: &str,
+    target: &Target,
+) -> Result<Vec<String>, String> {
     let mut args = vec!["x".to_string(), "podcast-dl".to_string()];
     args.extend(config_option_args(
         &config.podcast_dl_options,

@@ -9,7 +9,7 @@ thread_local! {
 
 pub fn prompt(message: &str) -> Option<String> {
     if !io::stdin().is_terminal() {
-        return fallback_prompt(message);
+        return fallback_prompt(message, false);
     }
 
     EDITOR.with(|editor| {
@@ -22,21 +22,23 @@ pub fn prompt(message: &str) -> Option<String> {
                     }
                     Some(line)
                 }
-                Err(ReadlineError::Interrupted | ReadlineError::Eof) => None,
-                Err(_) => fallback_prompt(message),
+                Err(ReadlineError::Interrupted | ReadlineError::Eof) => cancel_prompt(),
+                Err(_) => fallback_prompt(message, true),
             },
-            None => fallback_prompt(message),
+            None => fallback_prompt(message, true),
         }
     })
 }
 
 pub fn prompt_required(message: &str) -> String {
     loop {
-        if let Some(value) = prompt(message) {
-            let value = value.trim();
-            if !value.is_empty() {
-                return value.to_string();
-            }
+        let Some(value) = prompt(message) else {
+            cancel_prompt();
+        };
+
+        let value = value.trim();
+        if !value.is_empty() {
+            return value.to_string();
         }
     }
 }
@@ -68,13 +70,19 @@ pub fn confirm_no_default(message: &str) -> bool {
     }
 }
 
-fn fallback_prompt(message: &str) -> Option<String> {
+fn fallback_prompt(message: &str, cancel_on_eof: bool) -> Option<String> {
     print!("{message}");
     io::stdout().flush().ok()?;
     let mut line = String::new();
     match io::stdin().read_line(&mut line) {
+        Ok(0) if cancel_on_eof => cancel_prompt(),
         Ok(0) => None,
         Ok(_) => Some(line.trim_end_matches(['\r', '\n']).to_string()),
         Err(_) => None,
     }
+}
+
+fn cancel_prompt() -> ! {
+    println!();
+    std::process::exit(130);
 }
