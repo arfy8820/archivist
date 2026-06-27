@@ -8,6 +8,14 @@ thread_local! {
 }
 
 pub fn prompt(message: &str) -> Option<String> {
+    prompt_inner(message, None)
+}
+
+pub fn prompt_with_initial(message: &str, initial: &str) -> Option<String> {
+    prompt_inner(message, Some(initial))
+}
+
+fn prompt_inner(message: &str, initial: Option<&str>) -> Option<String> {
     if !io::stdin().is_terminal() {
         return fallback_prompt(message, false);
     }
@@ -15,7 +23,7 @@ pub fn prompt(message: &str) -> Option<String> {
     EDITOR.with(|editor| {
         let mut editor = editor.borrow_mut();
         match editor.as_mut() {
-            Some(editor) => match editor.readline(message) {
+            Some(editor) => match read_line(editor, message, initial) {
                 Ok(line) => {
                     if !line.trim().is_empty() {
                         let _ = editor.add_history_entry(line.as_str());
@@ -30,6 +38,17 @@ pub fn prompt(message: &str) -> Option<String> {
     })
 }
 
+fn read_line(
+    editor: &mut DefaultEditor,
+    message: &str,
+    initial: Option<&str>,
+) -> rustyline::Result<String> {
+    match initial {
+        Some(initial) => editor.readline_with_initial(message, (initial, "")),
+        None => editor.readline(message),
+    }
+}
+
 pub fn prompt_required(message: &str) -> String {
     loop {
         let Some(value) = prompt(message) else {
@@ -41,17 +60,6 @@ pub fn prompt_required(message: &str) -> String {
             return value.to_string();
         }
     }
-}
-
-pub fn prompt_optional(message: &str) -> Option<String> {
-    prompt(message).and_then(|value| {
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        }
-    })
 }
 
 pub fn confirm_yes_default(message: &str) -> bool {

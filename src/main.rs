@@ -12,7 +12,9 @@ use config::{
     ConfigAction, ConfigCommand, ConfigProperty, load_config, parse_config_property, print_json,
     save_config, set_config_property, show_config_property,
 };
-use input::{confirm_no_default, confirm_yes_default, prompt, prompt_optional, prompt_required};
+use input::{
+    confirm_no_default, confirm_yes_default, prompt, prompt_required, prompt_with_initial,
+};
 use paths::{
     config_file, logs_directory, podcast_archive_file, sync_log_file, youtube_archive_file,
 };
@@ -269,16 +271,6 @@ fn handle_add(cli: &Cli, config_path: &Path, mut config: Config, args: AddArgs) 
     let mut urls = resolve_urls(args.urls);
     let primary_url = urls.first().cloned().unwrap_or_default();
 
-    let output_template = match args
-        .output
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        Some(value) => Some(value.to_string()),
-        None => prompt_optional("Output template (optional): "),
-    };
-
     let requested_source = match parse_source_arg(args.source_type.as_deref()) {
         Ok(source) => source,
         Err(error) => {
@@ -287,6 +279,17 @@ fn handle_add(cli: &Cli, config_path: &Path, mut config: Config, args: AddArgs) 
         }
     };
     let source_type = requested_source.unwrap_or_else(|| infer_source_type(&primary_url));
+
+    let output_template = match args
+        .output
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Some(value) => Some(value.to_string()),
+        None => prompt_output_template(&config, source_type),
+    };
+
     yt_dlp::expand_playlist_urls(&mut urls, source_type, args.include_all, |base_url| {
         confirm_no_default(&format!(
             "Also add '{base_url}' to capture videos not in a playlist? [y/N]: "
@@ -332,6 +335,22 @@ fn handle_add(cli: &Cli, config_path: &Path, mut config: Config, args: AddArgs) 
             1
         }
     }
+}
+
+fn prompt_output_template(config: &Config, source_type: SourceType) -> Option<String> {
+    let default = match source_type {
+        SourceType::YouTube => &config.default_youtube_template,
+        SourceType::Podcast => &config.default_podcast_template,
+    };
+
+    prompt_with_initial("Output template: ", default).and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() || trimmed == default {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
 }
 
 fn handle_remove(config_path: &Path, mut config: Config, args: RemoveArgs) -> i32 {
@@ -407,11 +426,14 @@ fn handle_list(cli: &Cli, config: &Config, args: ListArgs) -> i32 {
                 .into_iter()
                 .collect::<std::collections::BTreeMap<_, _>>(),
         );
-    } else if entries.is_empty() {
-        println!("No archive mappings configured.");
     } else {
-        for (name, target) in entries {
-            print_target(name, target);
+        print_list_defaults(config);
+        if entries.is_empty() {
+            println!("No archive mappings configured.");
+        } else {
+            for (name, target) in entries {
+                print_target(name, target);
+            }
         }
     }
     0
@@ -726,6 +748,13 @@ fn print_sync_result(label: &str, result: &ProcessResult) {
     if result.exit_code != 0 && !result.stderr.trim().is_empty() {
         eprintln!("{}", result.stderr);
     }
+}
+
+fn print_list_defaults(config: &Config) {
+    println!("Default templates");
+    println!("  YouTube: {}", config.default_youtube_template);
+    println!("  Podcast: {}", config.default_podcast_template);
+    println!();
 }
 
 fn print_target(name: &str, target: &Target) {

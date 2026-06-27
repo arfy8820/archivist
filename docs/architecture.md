@@ -164,7 +164,7 @@ Implemented global options:
 --version, -v
 ```
 
-JSON output is implemented for `list`, `config show`, and `probe`. `config edit` opens the config without parsing it first, so it can be used to repair invalid TOML. Sync still prints human-readable process status and streams subprocess output to process logs.
+JSON output is implemented for `list`, `config show`, and `probe`. Human-readable `list` output starts with the configured default templates. `config edit` opens the config without parsing it first, so it can be used to repair invalid TOML. Sync still prints human-readable process status and streams subprocess output to process logs.
 
 ## Error Handling
 

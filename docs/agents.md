@@ -61,7 +61,7 @@ Implemented global options:
 --version, -v
 ```
 
-`list` and `sync` with no target mean all targets. `list <name>` lists one target; `list --all` explicitly lists all targets. `add` may prompt for URL, output template, label, YouTube playlist expansion, and subdirectory behavior when options are omitted. `--url` may be supplied multiple times. In interactive mode, `add` asks whether to add another URL to the target. `--subdir` stores the target under a key-named subdirectory by setting `subdir = true`. `--include-all` adds the base URL for YouTube URLs ending in `/playlists` without prompting.
+`list` and `sync` with no target mean all targets. `list <name>` lists one target; `list --all` explicitly lists all targets. Human-readable `list` output starts with the configured default templates. `add` may prompt for URL, output template, label, YouTube playlist expansion, and subdirectory behavior when options are omitted. Interactive output template prompts are pre-filled with the selected source default; unchanged text means no target override. `--url` may be supplied multiple times. In interactive mode, `add` asks whether to add another URL to the target. `--subdir` stores the target under a key-named subdirectory by setting `subdir = true`. `--include-all` adds the base URL for YouTube URLs ending in `/playlists` without prompting.
 
 ## Config Shape
 
