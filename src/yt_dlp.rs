@@ -146,8 +146,11 @@ mod tests {
         assert_eq!(
             args,
             vec![
+                "-I".to_string(),
+                "0".to_string(),
                 "--print".to_string(),
                 "playlist:description".to_string(),
+                "--skip-download".to_string(),
                 "https://www.youtube.com/@example".to_string(),
             ]
         );

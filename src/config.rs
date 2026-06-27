@@ -7,13 +7,22 @@ use std::path::Path;
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum ConfigAction {
+    #[command(about = "Show all config or one config property")]
     Show {
+        #[arg(value_name = "PROPERTY", help = "Property name or alias to show")]
         property: Option<String>,
     },
+    #[command(about = "Set or clear a config property")]
     Set {
+        #[arg(value_name = "PROPERTY", help = "Property name or alias to update")]
         property: String,
+        #[arg(
+            value_name = "VALUE",
+            help = "New value; omit to clear supported properties"
+        )]
         value: Vec<String>,
     },
+    #[command(about = "Open the config file in your editor")]
     Edit,
 }
 

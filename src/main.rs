@@ -33,16 +33,27 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
     name = APP_NAME,
     version = VERSION,
     about = "Personal media archiving CLI",
+    long_about = "Archivist stores named media targets in a TOML config file, then delegates downloads and metadata lookups to yt-dlp and podcast-dl.",
+    after_help = "Examples:\n  archivist add --url https://www.youtube.com/@example --type youtube\n  archivist list --all\n  archivist sync my-target\n  archivist config edit",
     disable_version_flag = true
 )]
 struct Cli {
-    #[arg(short = 'c', long = "config-file")]
+    #[arg(
+        short = 'c',
+        long = "config-file",
+        value_name = "PATH",
+        help = "Use a specific TOML config file"
+    )]
     config_file: Option<PathBuf>,
-    #[arg(short = 'j', long = "json")]
+    #[arg(
+        short = 'j',
+        long = "json",
+        help = "Print supported command output as JSON"
+    )]
     json: bool,
-    #[arg(long)]
+    #[arg(long, help = "Suppress informational command logging")]
     quiet: bool,
-    #[arg(short = 'v', long = "version")]
+    #[arg(short = 'v', long = "version", help = "Print the Archivist version")]
     version: bool,
     #[command(subcommand)]
     command: Option<Commands>,
@@ -50,59 +61,93 @@ struct Cli {
 
 #[derive(Subcommand, Debug, Clone)]
 enum Commands {
+    #[command(about = "List configured targets")]
     List(ListArgs),
+    #[command(about = "Add a target to the config")]
     Add(AddArgs),
+    #[command(about = "Remove a target from the config")]
     Remove(RemoveArgs),
+    #[command(about = "Download one target or all targets")]
     Sync(SyncArgs),
+    #[command(about = "Show the inferred source type for a target")]
     Probe(ProbeArgs),
+    #[command(about = "Print downloader-provided info for a target")]
     Info(InfoArgs),
+    #[command(about = "Show, edit, or update config properties")]
     Config(ConfigCommand),
 }
 
 #[derive(Args, Debug, Clone)]
 struct AddArgs {
-    #[arg(long = "url")]
+    #[arg(
+        long = "url",
+        value_name = "URL",
+        help = "URL to store on the target; may be supplied multiple times"
+    )]
     urls: Vec<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "NAME",
+        help = "Target label to store in the config"
+    )]
     label: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "TEMPLATE",
+        help = "Per-target output template override"
+    )]
     output: Option<String>,
-    #[arg(long = "type")]
+    #[arg(
+        long = "type",
+        value_name = "TYPE",
+        help = "Target source type: auto, youtube, or podcast"
+    )]
     source_type: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Store downloads under a subdirectory named after the target"
+    )]
     subdir: bool,
-    #[arg(long = "include-all")]
+    #[arg(
+        long = "include-all",
+        help = "For YouTube /playlists URLs, also add the base URL without prompting"
+    )]
     include_all: bool,
 }
 
 #[derive(Args, Debug, Clone)]
 struct RemoveArgs {
+    #[arg(value_name = "NAME", help = "Target label to remove")]
     name: String,
-    #[arg(long = "delete-archive")]
+    #[arg(long = "delete-archive", help = "Also remove the target archive file")]
     delete_archive: bool,
 }
 
 #[derive(Args, Debug, Clone)]
 struct SyncArgs {
+    #[arg(value_name = "NAME", help = "Target label to sync")]
     name: Option<String>,
-    #[arg(long)]
+    #[arg(long, help = "Sync all targets explicitly")]
     all: bool,
 }
 
 #[derive(Args, Debug, Clone)]
 struct ListArgs {
+    #[arg(value_name = "NAME", help = "Target label to list")]
     name: Option<String>,
-    #[arg(long)]
+    #[arg(long, help = "List all targets explicitly")]
     all: bool,
 }
 
 #[derive(Args, Debug, Clone)]
 struct ProbeArgs {
+    #[arg(value_name = "NAME", help = "Target label to inspect")]
     name: String,
 }
 
 #[derive(Args, Debug, Clone)]
 struct InfoArgs {
+    #[arg(value_name = "NAME", help = "Target label to query")]
     name: String,
 }
 
