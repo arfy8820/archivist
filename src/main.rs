@@ -51,9 +51,9 @@ struct Cli {
         help = "Print supported command output as JSON"
     )]
     json: bool,
-    #[arg(long, help = "Suppress informational command logging")]
-    quiet: bool,
-    #[arg(short = 'v', long = "version", help = "Print the Archivist version")]
+    #[arg(short = 'v', long = "verbose", help = "Show informational command logging")]
+    verbose: bool,
+    #[arg(long, help = "Print the Archivist version")]
     version: bool,
     #[command(subcommand)]
     command: Option<Commands>,
@@ -189,7 +189,7 @@ fn run(cli: Cli) -> i32 {
     }
 
     log_info(
-        cli.quiet,
+        cli.verbose,
         &format!("Loading config from {}", config_path.display()),
     );
 
@@ -518,7 +518,7 @@ fn handle_info(cli: &Cli, config: &Config, args: InfoArgs) -> i32 {
     };
 
     log_info(
-        cli.quiet,
+        cli.verbose,
         &format!("Running: {}", format_command(executable, &command_args)),
     );
 
@@ -589,13 +589,13 @@ fn handle_sync(cli: &Cli, config: &Config, args: SyncArgs) -> i32 {
 
         let command_line = format_command(executable, &command_args);
         println!("Syncing '{name}'...");
-        log_info(cli.quiet, &format!("Running: {command_line}"));
+        log_info(cli.verbose, &format!("Running: {command_line}"));
         let log_path = sync_log_file(&name);
         let result = run_process_with_log(executable, &command_args, &log_path, &command_line);
 
         match &result {
             Ok(result) => {
-                log_info(cli.quiet, &format!("Wrote log to {}", log_path.display()));
+                log_info(cli.verbose, &format!("Wrote log to {}", log_path.display()));
                 print_sync_result(&name, result);
                 if result.exit_code != 0 {
                     final_code = result.exit_code;
@@ -706,7 +706,7 @@ fn resolve_label(
             let args = podcast_dl::info_args(url);
             println!("No label supplied. Probing podcast-dl for feed info...");
             log_info(
-                cli.quiet,
+                cli.verbose,
                 &format!("Running: {}", format_command("deno", &args)),
             );
             match podcast_dl::probe_label(url) {
@@ -724,7 +724,7 @@ fn resolve_label(
             let args = yt_dlp::probe_args(url);
             println!("No label supplied. Probing yt-dlp for metadata...");
             log_info(
-                cli.quiet,
+                cli.verbose,
                 &format!("Running: {}", format_command("yt-dlp", &args)),
             );
             match yt_dlp::probe(url) {

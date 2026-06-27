@@ -45,8 +45,8 @@ pub fn format_command(executable: &str, args: &[String]) -> String {
         .join(" ")
 }
 
-pub fn log_info(quiet: bool, message: &str) {
-    if !quiet {
+pub fn log_info(verbose: bool, message: &str) {
+    if verbose {
         println!("{message}");
     }
 }
