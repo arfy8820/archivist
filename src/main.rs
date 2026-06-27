@@ -12,13 +12,11 @@ use config::{
     ConfigAction, ConfigCommand, ConfigProperty, load_config, parse_config_property, print_json,
     save_config, set_config_property, show_config_property,
 };
-use input::{
-    confirm_no_default, confirm_yes_default, prompt, prompt_required, prompt_with_initial,
-};
+use input::{confirm_no_default, prompt_required, prompt_with_initial};
 use paths::{
     config_file, logs_directory, podcast_archive_file, sync_log_file, youtube_archive_file,
 };
-use process::run_process_with_log;
+use process::{run_process, run_process_with_log};
 use std::env;
 use std::fs;
 use std::io;
@@ -57,6 +55,7 @@ enum Commands {
     Remove(RemoveArgs),
     Sync(SyncArgs),
     Probe(ProbeArgs),
+    Info(InfoArgs),
     Config(ConfigCommand),
 }
 
@@ -99,6 +98,11 @@ struct ListArgs {
 
 #[derive(Args, Debug, Clone)]
 struct ProbeArgs {
+    name: String,
+}
+
+#[derive(Args, Debug, Clone)]
+struct InfoArgs {
     name: String,
 }
 
@@ -158,6 +162,7 @@ fn run(cli: Cli) -> i32 {
         Commands::Remove(args) => handle_remove(&config_path, config, args),
         Commands::Sync(args) => handle_sync(&cli, &config, args),
         Commands::Probe(args) => handle_probe(&cli, &config, args),
+        Commands::Info(args) => handle_info(&cli, &config, args),
         Commands::Config(args) => handle_config(&cli, &config_path, config, args),
     }
 }
@@ -456,6 +461,31 @@ fn handle_probe(cli: &Cli, config: &Config, args: ProbeArgs) -> i32 {
     0
 }
 
+fn handle_info(cli: &Cli, config: &Config, args: InfoArgs) -> i32 {
+    let Some(target) = config.targets.get(&args.name) else {
+        eprintln!("No entry found for label '{}'.", args.name);
+        return 1;
+    };
+
+    let (executable, command_args) = match target.source_type() {
+        SourceType::YouTube => ("yt-dlp", yt_dlp::info_args(target.primary_url())),
+        SourceType::Podcast => ("deno", podcast_dl::info_args(target.primary_url())),
+    };
+
+    log_info(
+        cli.quiet,
+        &format!("Running: {}", format_command(executable, &command_args)),
+    );
+
+    match run_process(executable, &command_args) {
+        Ok(result) => print_process_output(result),
+        Err(error) => {
+            eprintln!("Failed to run {executable}: {error}");
+            1
+        }
+    }
+}
+
 fn handle_sync(cli: &Cli, config: &Config, args: SyncArgs) -> i32 {
     if args.all && args.name.is_some() {
         eprintln!("Use either 'sync --all' or 'sync <name>', not both.");
@@ -668,10 +698,7 @@ fn resolve_label(
 
 fn choose_label_from_probe(probe: &ProbeInfo) -> String {
     if let Some(stable) = stable_suggested_label(probe) {
-        if confirm_yes_default(&format!("Use detected label '{stable}'? [Y/n]: ")) {
-            return stable;
-        }
-        return sanitize_label(&prompt_required("Label: "));
+        return choose_label_from_suggestion(&stable);
     }
 
     match suggested_label(probe) {
@@ -682,7 +709,7 @@ fn choose_label_from_probe(probe: &ProbeInfo) -> String {
 
 fn choose_label_from_suggestion(suggestion: &str) -> String {
     let sanitized = sanitize_label(suggestion);
-    match prompt(&format!("Label [{sanitized}]: ")) {
+    match prompt_with_initial("Label: ", &sanitized) {
         Some(value) if !value.trim().is_empty() => sanitize_label(value.trim()),
         _ => sanitized,
     }
@@ -748,6 +775,24 @@ fn print_sync_result(label: &str, result: &ProcessResult) {
     if result.exit_code != 0 && !result.stderr.trim().is_empty() {
         eprintln!("{}", result.stderr);
     }
+}
+
+fn print_process_output(result: ProcessResult) -> i32 {
+    if !result.stdout.is_empty() {
+        print!("{}", result.stdout);
+        if !result.stdout.ends_with('\n') {
+            println!();
+        }
+    }
+
+    if !result.stderr.is_empty() {
+        eprint!("{}", result.stderr);
+        if !result.stderr.ends_with('\n') {
+            eprintln!();
+        }
+    }
+
+    result.exit_code
 }
 
 fn print_list_defaults(config: &Config) {

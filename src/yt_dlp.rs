@@ -14,6 +14,14 @@ pub fn probe_args(url: &str) -> Vec<String> {
     ]
 }
 
+pub fn info_args(url: &str) -> Vec<String> {
+    vec![
+        "--print".to_string(),
+        "playlist:description".to_string(),
+        url.to_string(),
+    ]
+}
+
 pub fn probe(url: &str) -> Result<ProbeInfo, String> {
     let result = run_process("yt-dlp", &probe_args(url)).map_err(|error| error.to_string())?;
     if result.exit_code != 0 {
@@ -126,6 +134,20 @@ mod tests {
         assert_eq!(args[0], "--ignore-errors");
         assert_eq!(args[1], "--no-warnings");
         assert_eq!(args[2], "--download-archive");
+    }
+
+    #[test]
+    fn info_args_print_playlist_description() {
+        let args = info_args("https://www.youtube.com/@example");
+
+        assert_eq!(
+            args,
+            vec![
+                "--print".to_string(),
+                "playlist:description".to_string(),
+                "https://www.youtube.com/@example".to_string(),
+            ]
+        );
     }
 
     #[test]

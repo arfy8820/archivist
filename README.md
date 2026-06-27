@@ -106,13 +106,16 @@ archivist list
 archivist list --all
 archivist list my-podcast
 archivist probe my-podcast
+archivist info my-podcast
 archivist remove my-podcast
 archivist remove my-podcast --delete-archive
 ```
 
 `list` without a target lists all configured targets. `list <target>` lists one target, and `list --all` explicitly lists all targets. Human-readable list output starts with the configured default YouTube and podcast templates.
 
-If `--label` is omitted, Archivist probes the first URL and prompts for a label. YouTube labels are probed with `yt-dlp --dump-json`; podcast labels are probed with `deno x podcast-dl --info`. Interactive `add` pre-fills the output template prompt with the selected source's default template; leaving it unchanged stores no per-target override, while editing it stores `output_template` on the target. `add` prompts whether to store downloads in a target subdirectory unless `--subdir` is passed. When no `--url` is supplied, interactive add asks whether to add another URL to the target.
+If `--label` is omitted, Archivist probes the first URL and prompts for a label with the detected label pre-filled for editing. YouTube labels are probed with `yt-dlp --dump-json`; podcast labels are probed with `deno x podcast-dl --info`. Interactive `add` pre-fills the output template prompt with the selected source's default template; leaving it unchanged stores no per-target override, while editing it stores `output_template` on the target. `add` prompts whether to store downloads in a target subdirectory unless `--subdir` is passed. When no `--url` is supplied, interactive add asks whether to add another URL to the target.
+
+`info <target>` prints downloader-provided info for a target. Podcast targets run `deno x podcast-dl --info --url <url>`. YouTube targets run `yt-dlp --print playlist:description <url>`.
 
 When adding a YouTube URL ending in `/playlists`, Archivist asks whether to also add the base URL to capture videos not in a playlist. `--include-all` answers yes without prompting.
 

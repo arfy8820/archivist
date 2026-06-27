@@ -62,14 +62,6 @@ pub fn prompt_required(message: &str) -> String {
     }
 }
 
-pub fn confirm_yes_default(message: &str) -> bool {
-    match prompt(message) {
-        None => true,
-        Some(value) if value.trim().is_empty() => true,
-        Some(value) => matches!(value.trim().to_ascii_lowercase().as_str(), "y" | "yes"),
-    }
-}
-
 pub fn confirm_no_default(message: &str) -> bool {
     match prompt(message) {
         None => false,
