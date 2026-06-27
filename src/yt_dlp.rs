@@ -20,7 +20,7 @@ pub fn info_args(url: &str) -> Vec<String> {
 		"0".to_string(),
         "--print".to_string(),
         "playlist:description".to_string(),
-		"--skip.download".to_string(),
+		"--skip-download".to_string(),
         url.to_string(),
     ]
 }
